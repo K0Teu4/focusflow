@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+
+# База данных (не коммитим пользовательские данные)
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# Flet build output
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Тестовые файлы и отчёты
+test_*.py
+focusflow_audit_*.txt
+
+# Аудиофайлы слишком большие для GitHub (лимит 100MB)
+# Храним только структуру папки
+assets/sounds/*.wav
+assets/sounds/*.mp3
+!assets/sounds/.gitkeep
+
+# Логи
+*.log
