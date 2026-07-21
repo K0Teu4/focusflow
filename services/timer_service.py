@@ -31,6 +31,7 @@ class TimerService:
         self.session_started_at: Optional[datetime] = None
         self._callback: Optional[Callable] = None
         self._sound_enabled = True
+        self._sound_type = "bell"
         self._sound_service = SoundService()
         self._task: Optional[asyncio.Task] = None
         self.just_finished = False
@@ -62,8 +63,10 @@ class TimerService:
             with SessionLocal() as db:
                 settings = get_settings(db)
                 self._sound_enabled = settings.get("sound_enabled", sound_enabled)
+                self._sound_type = settings.get("sound_type", "bell")  # НОВОЕ
         except:
             self._sound_enabled = sound_enabled
+            self._sound_type = "bell"   
 
         self.is_running = True
         self.just_finished = False
@@ -140,7 +143,7 @@ class TimerService:
                 self.just_finished = True
                 self._save_session()
                 if self._sound_enabled:
-                    self._sound_service.play_bell()
+                    self._sound_service.play(self._sound_type)
                 self.toggle_session_type()
                 if self._callback:
                     self._callback()

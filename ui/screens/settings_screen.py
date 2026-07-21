@@ -1,8 +1,9 @@
 # ui/screens/settings_screen.py
 import flet as ft
-from db.database import SessionLocal, get_settings, update_settings, get_user_state, update_premium_status
+from db.database import SessionLocal, get_settings, update_settings, get_user_state
+from services.sound_service import SoundService
 from ui.theme import COLORS
-from datetime import datetime
+
 
 class SettingsScreen(ft.Column):
     def __init__(self, page: ft.Page, on_settings_changed=None, on_open_premium=None):
@@ -14,6 +15,7 @@ class SettingsScreen(ft.Column):
         self._page = page
         self.on_settings_changed = on_settings_changed
         self.on_open_premium = on_open_premium
+        self.sound_service = SoundService()
 
         # Загружаем текущие значения
         with SessionLocal() as db:
@@ -22,7 +24,6 @@ class SettingsScreen(ft.Column):
             self.is_premium = user_state.is_premium
             self.premium_expires = user_state.premium_expires_at
 
-        # Автосохранение
         def auto_save(e=None):
             self._save_current_values()
 
@@ -79,6 +80,41 @@ class SettingsScreen(ft.Column):
             on_change=auto_save,
         )
 
+        # === НОВОЕ: Dropdown выбора звука ===
+        current_sound = settings.get("sound_type", "bell")
+        sound_options = SoundService.get_all_sounds(is_premium=self.is_premium)
+
+        self.sound_dropdown = ft.Dropdown(
+            label="Звук уведомления",
+            value=current_sound,
+            width=250,
+            border_color=COLORS["primary"],
+            color=COLORS["text"],
+            bgcolor=COLORS["surface"],
+            options=[
+                ft.dropdown.Option(key=sid, text=name)
+                for sid, name in sound_options.items()
+            ],
+        )
+        self.sound_dropdown.on_change = self._on_sound_change  # НОВОЕ: назначаем отдельно
+
+        self.test_sound_button = ft.OutlinedButton(
+            "▶ Тест",
+            style=ft.ButtonStyle(
+                side=ft.BorderSide(1.5, COLORS["primary"]),
+                color=COLORS["primary"],
+            ),
+            on_click=self._on_test_sound,
+            width=80,
+            height=42,
+        )
+
+        self.sound_row = ft.Row(
+            [self.sound_dropdown, self.test_sound_button],
+            spacing=10,
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
+
         self.auto_start_checkbox = ft.Checkbox(
             label="Автостарт следующей сессии",
             value=settings.get("auto_start", False),
@@ -105,11 +141,14 @@ class SettingsScreen(ft.Column):
         )
 
         # === PREMIUM СТАТУС ===
-        # ИСПРАВЛЕНО: используем просто BorderSide для uniforme border
         primary_border = ft.BorderSide(1.5, COLORS["primary"])
-        
+
         if self.is_premium:
-            expires_text = f"до {self.premium_expires.strftime('%d.%m.%Y')}" if self.premium_expires else "бессрочно"
+            expires_text = (
+                f"до {self.premium_expires.strftime('%d.%m.%Y')}"
+                if self.premium_expires
+                else "бессрочно"
+            )
             self.premium_status = ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.Icons.VERIFIED, size=24, color=COLORS["success"]),
@@ -132,7 +171,7 @@ class SettingsScreen(ft.Column):
                     ], spacing=8),
                     ft.Container(height=8),
                     ft.Text(
-                        "Разблокируйте графики, экспорт, темы и многое другое",
+                        "Разблокируйте 3+ звука, графики, экспорт и темы",
                         size=13,
                         color=COLORS["text_secondary"],
                     ),
@@ -149,18 +188,17 @@ class SettingsScreen(ft.Column):
                 padding=20,
                 bgcolor=COLORS["surface"],
                 border_radius=12,
-                border=primary_border,  # ИСПРАВЛЕНО: просто передаем BorderSide
+                border=primary_border,
                 margin=ft.Margin(20, 0, 20, 0),
             )
 
-        # Сборка UI
+        # === СБОРКА UI ===
         self.controls = [
             ft.Container(
                 content=ft.Text("Настройки", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
                 padding=ft.padding.Padding(20, 20, 20, 0),
                 alignment=ft.Alignment(0, 0),
             ),
-            # Premium статус
             self.premium_status,
             # Длительность
             ft.Container(
@@ -177,12 +215,14 @@ class SettingsScreen(ft.Column):
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Поведение
+            # Поведение + звук
             ft.Container(
                 content=ft.Column([
                     ft.Text("Поведение", size=18, color=COLORS["text"]),
                     ft.Container(height=8),
                     self.sound_checkbox,
+                    self.sound_row,  # НОВОЕ
+                    ft.Container(height=8),
                     self.auto_start_checkbox,
                     self.auto_start_delay_field,
                 ], spacing=8),
@@ -191,7 +231,7 @@ class SettingsScreen(ft.Column):
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Premium функции (заглушка)
+            # Premium функции (оставшиеся)
             ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -199,7 +239,6 @@ class SettingsScreen(ft.Column):
                         self._create_pro_badge(),
                     ], spacing=8),
                     ft.Container(height=8),
-                    self._create_locked_feature(ft.Icons.MUSIC_NOTE, "Выбор звука (3+ варианта)"),
                     self._create_locked_feature(ft.Icons.PALETTE, "Кастомные темы"),
                     self._create_locked_feature(ft.Icons.BAR_CHART, "Расширенная статистика"),
                     self._create_locked_feature(ft.Icons.FILE_DOWNLOAD, "Экспорт в CSV/PDF"),
@@ -219,7 +258,6 @@ class SettingsScreen(ft.Column):
         ]
 
     def _create_pro_badge(self):
-        """Бейдж PRO"""
         return ft.Container(
             content=ft.Text("PRO", size=10, weight=ft.FontWeight.BOLD, color=COLORS["bg"]),
             bgcolor=COLORS["primary"],
@@ -228,7 +266,6 @@ class SettingsScreen(ft.Column):
         )
 
     def _create_locked_feature(self, icon, title):
-        """Заблокированная Premium-функция"""
         return ft.Container(
             content=ft.Row([
                 ft.Icon(icon, size=20, color=COLORS["text_secondary"]),
@@ -243,13 +280,54 @@ class SettingsScreen(ft.Column):
             ink=True,
         )
 
+    # === НОВОЕ: обработчики звука ===
+    def _on_sound_change(self, e):
+        selected = self.sound_dropdown.value
+        # Если выбран Premium-звук и нет подписки — возвращаем bell
+        if SoundService.is_premium_required(selected) and not self.is_premium:
+            self._show_premium_dialog_for_sound()
+            self.sound_dropdown.value = "bell"
+            self._page.update()
+            return
+        self._save_current_values()
+
+    def _on_test_sound(self, e):
+        """Воспроизводит выбранный звук"""
+        selected = self.sound_dropdown.value
+        if SoundService.is_premium_required(selected) and not self.is_premium:
+            self._show_premium_dialog_for_sound()
+            return
+        self.sound_service.play(selected)
+
+    def _show_premium_dialog_for_sound(self):
+        """Показывает диалог: звук доступен только в Premium"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("🔒 Premium звук"),
+            content=ft.Text("Этот звук доступен только в Premium версии."),
+            actions=[
+                ft.TextButton("Остаться на Free", on_click=lambda e: self._close_dialog(dialog)),
+                ft.TextButton("Открыть Premium", on_click=lambda e: self._open_premium_from_dialog(dialog)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _open_premium_from_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
+        self._navigate_to_premium()
+
     def _navigate_to_premium(self, e=None):
-        """Переход на вкладку Premium"""
         if self.on_open_premium:
             self.on_open_premium()
 
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
+
     def _save_current_values(self):
-        """Автосохранение всех настроек"""
         try:
             work_min = int(self.work_min_field.value or 0)
             break_min = int(self.break_min_field.value or 0)
@@ -257,7 +335,6 @@ class SettingsScreen(ft.Column):
             sessions = int(self.sessions_until_long_break_field.value or 0)
             delay = int(self.auto_start_delay_field.value or 0)
 
-            # Валидация
             if work_min <= 0 or break_min <= 0 or long_break_min <= 0 or sessions <= 0 or delay < 1:
                 self.status_message.value = "⚠ Введите корректные значения"
                 self.status_message.color = COLORS["error"]
@@ -272,7 +349,7 @@ class SettingsScreen(ft.Column):
                 "sound_enabled": self.sound_checkbox.value,
                 "auto_start": self.auto_start_checkbox.value,
                 "auto_start_delay": delay,
-                "sound_type": "bell",
+                "sound_type": self.sound_dropdown.value or "bell",
                 "theme": "dark",
             }
 
