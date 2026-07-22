@@ -109,10 +109,13 @@ class SettingsScreen(ft.Column):
             height=42,
         )
 
-        self.sound_row = ft.Row(
-            [self.sound_dropdown, self.test_sound_button],
-            spacing=10,
-            alignment=ft.MainAxisAlignment.CENTER,
+        self.sound_row = ft.Column(
+            [
+                self.sound_dropdown,
+                self.test_sound_button,
+            ],
+            spacing=8,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         self.auto_start_checkbox = ft.Checkbox(

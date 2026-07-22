@@ -4,13 +4,13 @@ from db.database import SessionLocal, get_tasks, create_task, complete_task, del
 from db.models import CATEGORIES
 from ui.theme import COLORS
 
-# Цвета для категорий
 CATEGORY_COLORS = {
     "work": COLORS["cat_work"],
     "rest": COLORS["cat_rest"],
     "hobby": COLORS["cat_hobby"],
     "study": COLORS["cat_study"],
 }
+
 
 class TasksScreen(ft.Column):
     def __init__(self, page: ft.Page, on_focus_task=None):
@@ -21,6 +21,7 @@ class TasksScreen(ft.Column):
         self._page = page
         self.on_focus_task = on_focus_task
         self.show_done = False
+        self.selected_category = "work"
 
         self.task_input = ft.TextField(
             hint_text="Новая задача...",
@@ -31,17 +32,6 @@ class TasksScreen(ft.Column):
             on_submit=self.on_add_task,
         )
 
-        self.category_dropdown = ft.Dropdown(
-            width=120,
-            border_color=COLORS["primary"],
-            color=COLORS["text"],
-            bgcolor=COLORS["surface"],
-            value="work",
-            options=[
-                ft.dropdown.Option(key=k, text=v) for k, v in CATEGORIES.items()
-            ],
-        )
-
         self.add_button = ft.IconButton(
             icon=ft.Icons.ADD_CIRCLE,
             icon_color=COLORS["primary"],
@@ -49,11 +39,20 @@ class TasksScreen(ft.Column):
             on_click=self.on_add_task,
         )
 
-        self.filter_checkbox = ft.Checkbox(
-            label="Показать выполненные",
-            value=self.show_done,
+        # НОВОЕ: категории как цветные чипы
+        self.category_chips = ft.Row(
+            spacing=8,
+            controls=self._build_category_chips(),
+        )
+
+        # НОВОЕ: Toggle вместо checkbox (ИСПРАВЛЕНО: label_text_style)
+        self.show_done_toggle = ft.Switch(
+            label="Выполненные",
+            value=False,
+            active_color=COLORS["primary"],
+            inactive_thumb_color=COLORS["text_secondary"],
             on_change=self.on_filter_change,
-            check_color=COLORS["primary"],
+            label_text_style=ft.TextStyle(size=13, color=COLORS["text_secondary"]),
         )
 
         self.tasks_list = ft.ListView(
@@ -66,21 +65,61 @@ class TasksScreen(ft.Column):
             ft.Container(
                 content=ft.Row([
                     self.task_input,
-                    self.category_dropdown,
                     self.add_button,
                 ], tight=True),
-                padding=20,
+                padding=ft.padding.Padding(20, 15, 20, 10),
                 bgcolor=COLORS["bg"],
             ),
             ft.Container(
-                content=self.filter_checkbox,
-                padding=ft.padding.Padding(20, 0, 0, 10),
+                content=self.category_chips,
+                padding=ft.padding.Padding(20, 0, 20, 10),
+                bgcolor=COLORS["bg"],
+            ),
+            ft.Container(
+                content=self.show_done_toggle,
+                padding=ft.padding.Padding(20, 0, 20, 10),
                 bgcolor=COLORS["bg"],
             ),
             self.tasks_list,
         ]
 
         self.load_tasks()
+
+    def _build_category_chips(self):
+        """Создаёт цветные чипы категорий"""
+        chips = []
+        for key, label in CATEGORIES.items():
+            color = CATEGORY_COLORS.get(key, COLORS["primary"])
+            is_selected = key == self.selected_category
+
+            def make_on_click(cat_key):
+                def handler(e):
+                    self.selected_category = cat_key
+                    self._update_chips()
+                return handler
+
+            chips.append(
+                ft.Container(
+                    content=ft.Text(
+                        label,
+                        size=13,
+                        weight=ft.FontWeight.BOLD if is_selected else ft.FontWeight.NORMAL,
+                        color=COLORS["bg"] if is_selected else color,
+                    ),
+                    bgcolor=color if is_selected else COLORS["surface"],
+                    border_radius=16,
+                    padding=ft.padding.Padding(12, 6, 12, 6),
+                    on_click=make_on_click(key),
+                    ink=True,
+                    border=ft.BorderSide(1.5, color) if not is_selected else None,
+                )
+            )
+        return chips
+
+    def _update_chips(self):
+        """Обновляет визуальное состояние чипов"""
+        self.category_chips.controls = self._build_category_chips()
+        self._page.update()
 
     def refresh_data(self):
         self.load_tasks()
@@ -112,7 +151,6 @@ class TasksScreen(ft.Column):
         category_label = CATEGORIES.get(task.category, "Работа")
         cat_color = CATEGORY_COLORS.get(task.category, COLORS["cat_work"])
 
-        # Цветовой тег категории
         category_badge = ft.Container(
             content=ft.Text(
                 category_label,
@@ -125,7 +163,6 @@ class TasksScreen(ft.Column):
             padding=ft.padding.Padding(6, 2, 6, 2),
         )
 
-        # Счётчик помидоров
         tomato_text = ft.Text(
             f"🍅 {pomodoro_count}",
             size=13,
@@ -166,20 +203,19 @@ class TasksScreen(ft.Column):
             padding=10,
             border_radius=10,
             bgcolor=COLORS["surface"],
-            margin=ft.margin.Margin(0, 0, 0, 5),
+            margin=ft.Margin(0, 0, 0, 5),
         )
 
     def on_add_task(self, e):
         title = self.task_input.value.strip()
         if not title:
             return
-        category = self.category_dropdown.value or "work"
         with SessionLocal() as db:
-            create_task(db, title, category)
+            create_task(db, title, self.selected_category)
         self.task_input.value = ""
         self._page.update()
         self.load_tasks()
 
     def on_filter_change(self, e):
-        self.show_done = self.filter_checkbox.value
+        self.show_done = self.show_done_toggle.value
         self.load_tasks()

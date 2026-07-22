@@ -2,8 +2,9 @@
 import flet as ft
 import asyncio
 from services.timer_service import TimerService
-from db.database import SessionLocal, get_tasks, get_today_stats, get_settings
+from db.database import SessionLocal, get_tasks, get_today_stats, get_settings, get_task_by_id
 from ui.theme import COLORS
+
 
 class TimerScreen(ft.Column):
     def __init__(self, page: ft.Page):
@@ -18,7 +19,7 @@ class TimerScreen(ft.Column):
         self.selected_task_id = None
         self._auto_start_task = None
 
-        # Фон таймера
+        # Круговой прогресс-бар
         self.timer_bg = ft.Container(
             width=220,
             height=220,
@@ -33,10 +34,11 @@ class TimerScreen(ft.Column):
                 color=COLORS["work"],
                 bgcolor=COLORS["surface"],
             ),
-            margin=ft.Margin(0, 20, 0, 12),  # left, top, right, bottom
+            margin=ft.Margin(0, 20, 0, 12),
         )
         self.progress_ring = self.timer_bg.content
 
+        # НОВОЕ: "Сессия 0 из 4" вместо "0/4"
         self.session_type_text = ft.Text(
             self.timer_service.get_session_type_display(),
             size=22,
@@ -45,10 +47,9 @@ class TimerScreen(ft.Column):
         )
 
         self.progress_text = ft.Text(
-            self.timer_service.get_session_progress(),
-            size=20,
-            weight=ft.FontWeight.BOLD,
-            color=COLORS["primary"],
+            self._get_progress_display(),
+            size=16,
+            color=COLORS["text_secondary"],
             margin=ft.Margin(0, 0, 0, 8),
         )
 
@@ -58,7 +59,16 @@ class TimerScreen(ft.Column):
             weight=ft.FontWeight.BOLD,
             color=COLORS["work"],
             font_family="monospace",
-            margin=ft.Margin(0, 0, 0, 16),
+            margin=ft.Margin(0, 0, 0, 8),
+        )
+
+        # НОВОЕ: "Выполняется: [задача]" вместо dropdown
+        self.current_task_text = ft.Text(
+            "Без задачи",
+            size=16,
+            color=COLORS["text_secondary"],
+            italic=True,
+            margin=ft.Margin(0, 0, 0, 12),
         )
 
         self.start_button = ft.ElevatedButton(
@@ -126,7 +136,7 @@ class TimerScreen(ft.Column):
             visible=False,
         )
 
-        # Dropdown
+        # Dropdown скрыт — выбор задачи через диалог
         self.task_dropdown = ft.Dropdown(
             label="Задача",
             hint_text="Выбрать задачу",
@@ -134,17 +144,15 @@ class TimerScreen(ft.Column):
             border_color=COLORS["primary"],
             color=COLORS["text"],
             bgcolor=COLORS["surface"],
-            margin=ft.Margin(0, 0, 0, 12),
+            visible=False,  # НОВОЕ: скрыт, используется программно
         )
         self.task_dropdown.on_change = self.on_task_change
 
-        self.next_task_text = ft.Text(
-            "",
-            size=14,
-            color=COLORS["text_secondary"],
-            italic=True,
-            visible=False,
-            margin=ft.Margin(0, 0, 0, 12),
+        # НОВОЕ: кнопка выбора задачи
+        self.select_task_button = ft.TextButton(
+            "📋 Выбрать задачу",
+            style=ft.ButtonStyle(color=COLORS["primary"]),
+            on_click=self._show_task_picker_dialog,
         )
 
         self.stats_text = ft.Text(
@@ -159,8 +167,9 @@ class TimerScreen(ft.Column):
             self.session_type_text,
             self.progress_text,
             self.time_display,
+            self.current_task_text,
+            self.select_task_button,
             self.task_dropdown,
-            self.next_task_text,
             ft.Row([self.start_button, self.pause_button], alignment=ft.MainAxisAlignment.CENTER, spacing=12),
             self.skip_button,
             self.auto_start_text,
@@ -172,6 +181,12 @@ class TimerScreen(ft.Column):
 
         self.load_tasks()
         self.update_stats()
+
+    def _get_progress_display(self) -> str:
+        """Возвращает 'Сессия 0 из 4' вместо '0/4'"""
+        done = self.timer_service.completed_work_sessions
+        total = self.timer_service.sessions_until_long_break
+        return f"Сессия {done} из {total}"
 
     def _cancel_auto_start_countdown(self):
         if self._auto_start_task and not self._auto_start_task.done():
@@ -188,7 +203,8 @@ class TimerScreen(ft.Column):
         self.progress_ring.value = 0.0
         self.time_display.value = self.timer_service.get_display_time()
         self.session_type_text.value = self.timer_service.get_session_type_display()
-        self.progress_text.value = self.timer_service.get_session_progress()
+        self.progress_text.value = self._get_progress_display()
+        self._update_current_task_text()
         self._page.update()
 
     def load_tasks(self):
@@ -204,6 +220,99 @@ class TimerScreen(ft.Column):
         with SessionLocal() as db:
             stats = get_today_stats(db)
             self.stats_text.value = f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
+
+    def _update_current_task_text(self):
+        """Обновляет текст 'Выполняется: ...'"""
+        selected = self.task_dropdown.value
+        if selected:
+            for opt in self.task_dropdown.options:
+                if opt.key == selected:
+                    self.current_task_text.value = f"▶ {opt.text}"
+                    self.current_task_text.color = COLORS["primary"]
+                    self.current_task_text.italic = False
+                    return
+        self.current_task_text.value = "Без задачи"
+        self.current_task_text.color = COLORS["text_secondary"]
+        self.current_task_text.italic = True
+
+    def _show_task_picker_dialog(self, e):
+        """Показывает диалог выбора задачи"""
+        with SessionLocal() as db:
+            tasks = get_tasks(db)
+
+        if not tasks:
+            dialog = ft.AlertDialog(
+                title=ft.Text("Нет задач"),
+                content=ft.Text("Создайте задачу на вкладке 'Задачи'"),
+                actions=[ft.TextButton("OK", on_click=lambda e: self._close_dialog(dialog))],
+            )
+            self._page.overlay.append(dialog)
+            dialog.open = True
+            self._page.update()
+            return
+
+        def make_task_button(task):
+            cat_colors = {
+                "work": COLORS["cat_work"],
+                "rest": COLORS["cat_rest"],
+                "hobby": COLORS["cat_hobby"],
+                "study": COLORS["cat_study"],
+            }
+            cat_color = cat_colors.get(task.category, COLORS["cat_work"])
+
+            def on_select(e):
+                self.task_dropdown.value = str(task.id)
+                self._update_session_label_from_dropdown()
+                self._update_current_task_text()
+                self._close_dialog(dialog)
+
+            return ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        width=8, height=8, border_radius=4, bgcolor=cat_color,
+                    ),
+                    ft.Text(task.title, size=16, color=COLORS["text"], expand=True),
+                ], spacing=10),
+                padding=14,
+                bgcolor=COLORS["surface"],
+                border_radius=10,
+                margin=ft.Margin(0, 0, 0, 6),
+                on_click=on_select,
+                ink=True,
+            )
+
+        task_buttons = [make_task_button(t) for t in tasks]
+
+        def on_clear(e):
+            self.task_dropdown.value = None
+            self._update_current_task_text()
+            self.timer_service.set_session_mode(True)
+            self.session_type_text.value = self.timer_service.get_session_type_display()
+            self._apply_mode_colors()
+            self._close_dialog(dialog)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Выберите задачу"),
+            content=ft.Column(
+                task_buttons + [
+                    ft.Container(height=8),
+                    ft.TextButton(
+                        "✕ Убрать задачу",
+                        style=ft.ButtonStyle(color=COLORS["text_secondary"]),
+                        on_click=on_clear,
+                    ),
+                ],
+                spacing=0,
+                scroll=ft.ScrollMode.AUTO,
+                height=min(len(tasks) * 60 + 60, 300),
+            ),
+            actions=[
+                ft.TextButton("Закрыть", on_click=lambda e: self._close_dialog(dialog)),
+            ],
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
 
     def _apply_mode_colors(self):
         mode = self.timer_service.get_mode_key()
@@ -226,21 +335,22 @@ class TimerScreen(ft.Column):
         self.pause_button.bgcolor = pause_color
 
         is_rest = not self.timer_service.is_work_session
-        self.task_dropdown.visible = not is_rest
+        self.select_task_button.visible = not is_rest
         if is_rest:
             selected = self.task_dropdown.value
             if selected:
                 for opt in self.task_dropdown.options:
                     if opt.key == selected:
-                        self.next_task_text.value = f"Следующая: {opt.text}"
-                        self.next_task_text.visible = True
+                        self.current_task_text.value = f"Следующая: {opt.text}"
+                        self.current_task_text.color = COLORS["text_secondary"]
+                        self.current_task_text.italic = True
                         break
-                else:
-                    self.next_task_text.visible = False
             else:
-                self.next_task_text.visible = False
+                self.current_task_text.value = "Отдых"
+                self.current_task_text.color = COLORS["text_secondary"]
+                self.current_task_text.italic = True
         else:
-            self.next_task_text.visible = False
+            self._update_current_task_text()
 
     def _update_progress(self):
         total = self.timer_service._get_current_target_sec()
@@ -254,10 +364,20 @@ class TimerScreen(ft.Column):
         is_running = self.timer_service.is_running
         self.skip_button.visible = is_rest and is_running
 
+    def _show_snackbar(self, message: str, color: str = COLORS["primary"]):
+        """Показывает SnackBar уведомление"""
+        self._page.snack_bar = ft.SnackBar(
+            content=ft.Text(message, color=COLORS["bg"], size=14),
+            bgcolor=color,
+            duration=3000,
+        )
+        self._page.snack_bar.open = True
+        self._page.update()
+
     def update_timer_display(self):
         self.time_display.value = self.timer_service.get_display_time()
         self.session_type_text.value = self.timer_service.get_session_type_display()
-        self.progress_text.value = self.timer_service.get_session_progress()
+        self.progress_text.value = self._get_progress_display()
         self._apply_mode_colors()
         self._update_progress()
         self._update_buttons()
@@ -268,6 +388,9 @@ class TimerScreen(ft.Column):
 
         if self.timer_service.just_finished:
             self.timer_service.just_finished = False
+            # НОВОЕ: SnackBar при завершении
+            session_name = self.timer_service.get_session_type_display()
+            self._show_snackbar(f"✅ {session_name} завершена!", COLORS["success"])
             self._check_auto_start()
 
         self._page.update()
@@ -323,6 +446,7 @@ class TimerScreen(ft.Column):
 
     def on_task_change(self, e):
         self._update_session_label_from_dropdown()
+        self._update_current_task_text()
         self._page.update()
 
     def _update_session_label_from_dropdown(self):
@@ -375,6 +499,7 @@ class TimerScreen(ft.Column):
         self.timer_service.set_session_mode(is_work)
         self.session_type_text.value = self.timer_service.get_session_type_display()
         self._apply_mode_colors()
+        self._update_current_task_text()
         self._update_progress()
         self.on_start(None)
         self._page.update()
@@ -421,3 +546,7 @@ class TimerScreen(ft.Column):
         self.progress_ring.value = 0.0
         self.update_timer_display()
         self.update_stats()
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()

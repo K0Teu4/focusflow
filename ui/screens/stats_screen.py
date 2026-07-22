@@ -66,21 +66,13 @@ class StatsScreen(ft.Column):
             recent = get_recent_sessions(db, limit=15)
 
         controls = []
-
         controls.append(
             ft.Container(
-                content=ft.Row([
-                    ft.Text(
-                        "📊 Статистика",
-                        size=28,
-                        weight=ft.FontWeight.BOLD,
-                        color=COLORS["text"],
-                    ),
-                ], alignment=ft.MainAxisAlignment.CENTER),
+                content=ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
                 padding=ft.padding.Padding(20, 20, 20, 10),
+                alignment=ft.Alignment(0, 0),
             )
         )
-
         controls.append(self._build_summary_cards(total, streak))
         controls.append(self._build_activity_chart(activity))
         controls.append(self._build_export_button())
@@ -115,9 +107,10 @@ class StatsScreen(ft.Column):
         )
 
     def _build_activity_chart(self, activity: list):
+        """ИСПРАВЛЕНО: дни недели ВСЕГДА снизу"""
         day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
         max_minutes = max([d['work_minutes'] for d in activity] + [1])
-        bar_max_height = 120
+        bar_max_height = 100
 
         bars = []
         for d in activity:
@@ -129,16 +122,36 @@ class StatsScreen(ft.Column):
             is_today = d == activity[-1]
             bar_color = COLORS["primary"] if minutes > 0 else COLORS["surface"]
 
-            bar_column = ft.Column([
-                ft.Text(str(minutes) if minutes > 0 else "", size=10, color=COLORS["text_secondary"]),
-                ft.Container(width=22, height=bar_height, bgcolor=bar_color, border_radius=4),
-                ft.Text(
-                    day_name,
-                    size=11,
-                    color=COLORS["text"] if is_today else COLORS["text_secondary"],
-                    weight=ft.FontWeight.BOLD if is_today else ft.FontWeight.NORMAL,
-                ),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4)
+            # ИСПРАВЛЕНО: каждая колонка — это Column с фиксированной высотой
+            # Значение сверху, столбик по центру, день ВСЕГДА снизу
+            bar_column = ft.Column(
+                [
+                    ft.Text(
+                        str(minutes) if minutes > 0 else "",
+                        size=10,
+                        color=COLORS["text_secondary"],
+                        height=16,
+                    ),
+                    ft.Container(
+                        width=24,
+                        height=bar_height,
+                        bgcolor=bar_color,
+                        border_radius=4,
+                    ),
+                    ft.Container(
+                        content=ft.Text(
+                            day_name,
+                            size=11,
+                            color=COLORS["text"] if is_today else COLORS["text_secondary"],
+                            weight=ft.FontWeight.BOLD if is_today else ft.FontWeight.NORMAL,
+                        ),
+                        height=20,
+                        alignment=ft.Alignment(0, 1),  # ВСЕГДА прижато к низу
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4,
+            )
 
             bars.append(
                 ft.Container(
@@ -160,11 +173,13 @@ class StatsScreen(ft.Column):
                 ft.Container(height=12),
                 ft.Container(
                     content=ft.Row(
-                        bars, spacing=6, vertical_alignment=ft.CrossAxisAlignment.END,
+                        bars,
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.END,
                     ),
-                    height=bar_max_height + 50,
+                    height=bar_max_height + 56,
                 ),
-                ft.Container(height=6),
+                ft.Container(height=4),
                 ft.Text(f"Пик: {max_minutes} мин", size=12, color=COLORS["text_secondary"]),
             ], spacing=0),
             padding=16,
@@ -174,63 +189,54 @@ class StatsScreen(ft.Column):
         )
 
     def _build_export_button(self):
-        """Кнопка экспорта CSV — сохраняет в стандартную папку без диалога."""
-        self.export_status = ft.Text(
-            "",
-            size=12,
-            color=COLORS["text_secondary"],
-            margin=ft.Margin(0, 6, 0, 0),
-            text_align=ft.TextAlign.CENTER,
-        )
-
+        """Кнопка экспорта — НОВОЕ: SnackBar вместо текстового статуса"""
         return ft.Container(
-            content=ft.Column([
-                ft.ElevatedButton(
-                    "📤 Экспорт в CSV",
-                    bgcolor=COLORS["primary"],
-                    color=COLORS["bg"],
-                    icon=ft.Icons.FILE_DOWNLOAD,
-                    on_click=self._on_export_click,
-                    width=250,
-                    height=48,
-                ),
-                self.export_status,
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+            content=ft.ElevatedButton(
+                "📤 Экспорт в CSV",
+                bgcolor=COLORS["primary"],
+                color=COLORS["bg"],
+                icon=ft.Icons.FILE_DOWNLOAD,
+                on_click=self._on_export_click,
+                width=250,
+                height=48,
+            ),
             padding=12,
             margin=ft.Margin(15, 10, 15, 0),
             alignment=ft.Alignment(0, 0),
         )
 
     def _on_export_click(self, e):
-        """Сохраняет CSV в стандартную папку (Downloads/Documents)."""
+        """Экспорт с SnackBar уведомлением"""
         try:
-            # Генерируем путь
             file_path = ExportService.generate_full_path()
-            
-            # Получаем данные из БД
+
             with SessionLocal() as db:
                 sessions = get_all_sessions_for_export(db)
-            
+
             if not sessions:
-                self.export_status.value = "⚠ Нет сессий для экспорта"
-                self.export_status.color = COLORS["error"]
-                self._page.update()
+                self._show_snackbar("⚠ Нет сессий для экспорта", COLORS["error"])
                 return
-            
-            # Выполняем экспорт
+
             success = ExportService.export_sessions_to_csv(sessions, file_path)
-            
+
             if success:
-                self.export_status.value = f"✓ Сохранено: {file_path.name}\n📁 {file_path.parent}"
-                self.export_status.color = COLORS["success"]
+                self._show_snackbar(
+                    f"✅ Файл сохранён: {file_path.name}",
+                    COLORS["success"],
+                )
             else:
-                self.export_status.value = "✗ Ошибка при сохранении"
-                self.export_status.color = COLORS["error"]
-            
+                self._show_snackbar("✗ Ошибка при сохранении", COLORS["error"])
+
         except Exception as ex:
-            self.export_status.value = f"⚠ Ошибка: {ex}"
-            self.export_status.color = COLORS["error"]
-        
+            self._show_snackbar(f"⚠ Ошибка: {ex}", COLORS["error"])
+
+    def _show_snackbar(self, message: str, color: str):
+        self._page.snack_bar = ft.SnackBar(
+            content=ft.Text(message, color=COLORS["bg"], size=14),
+            bgcolor=color,
+            duration=4000,
+        )
+        self._page.snack_bar.open = True
         self._page.update()
 
     def _build_recent_sessions(self, recent: list):
@@ -275,12 +281,7 @@ class StatsScreen(ft.Column):
         if not items:
             items.append(
                 ft.Container(
-                    content=ft.Text(
-                        "Пока нет завершённых сессий",
-                        size=14,
-                        color=COLORS["text_secondary"],
-                        italic=True,
-                    ),
+                    content=ft.Text("Пока нет завершённых сессий", size=14, color=COLORS["text_secondary"], italic=True),
                     padding=20,
                     alignment=ft.Alignment(0, 0),
                 )
@@ -288,13 +289,7 @@ class StatsScreen(ft.Column):
 
         return ft.Container(
             content=ft.Column([
-                ft.Text(
-                    "Последние сессии",
-                    size=16,
-                    weight=ft.FontWeight.BOLD,
-                    color=COLORS["text"],
-                    margin=ft.Margin(0, 0, 0, 10),
-                ),
+                ft.Text("Последние сессии", size=16, weight=ft.FontWeight.BOLD, color=COLORS["text"], margin=ft.Margin(0, 0, 0, 10)),
                 *items,
             ]),
             padding=16,
