@@ -1,6 +1,6 @@
 # ui/screens/tasks_screen.py
 import flet as ft
-from db.database import SessionLocal, get_tasks, create_task, complete_task, delete_task, get_task_session_count
+from db.database import SessionLocal, get_tasks, create_task, complete_task, delete_task, get_task_session_count, update_task
 from db.models import CATEGORIES
 from ui.theme import COLORS
 
@@ -39,13 +39,11 @@ class TasksScreen(ft.Column):
             on_click=self.on_add_task,
         )
 
-        # НОВОЕ: категории как цветные чипы
         self.category_chips = ft.Row(
             spacing=8,
             controls=self._build_category_chips(),
         )
 
-        # НОВОЕ: Toggle вместо checkbox (ИСПРАВЛЕНО: label_text_style)
         self.show_done_toggle = ft.Switch(
             label="Выполненные",
             value=False,
@@ -86,7 +84,6 @@ class TasksScreen(ft.Column):
         self.load_tasks()
 
     def _build_category_chips(self):
-        """Создаёт цветные чипы категорий"""
         chips = []
         for key, label in CATEGORIES.items():
             color = CATEGORY_COLORS.get(key, COLORS["primary"])
@@ -117,7 +114,6 @@ class TasksScreen(ft.Column):
         return chips
 
     def _update_chips(self):
-        """Обновляет визуальное состояние чипов"""
         self.category_chips.controls = self._build_category_chips()
         self._page.update()
 
@@ -148,25 +144,65 @@ class TasksScreen(ft.Column):
             if self.on_focus_task:
                 self.on_focus_task(task.id, task.category)
 
+        def on_edit_title(e):
+            self._show_edit_dialog(task)
+
+        def on_edit_category(e):
+            self._show_category_dialog(task)
+
         category_label = CATEGORIES.get(task.category, "Работа")
         cat_color = CATEGORY_COLORS.get(task.category, COLORS["cat_work"])
 
+        # НОВОЕ: категория с иконкой ▾
         category_badge = ft.Container(
-            content=ft.Text(
-                category_label,
-                size=11,
-                color=COLORS["bg"],
-                weight=ft.FontWeight.BOLD,
-            ),
+            content=ft.Row([
+                ft.Text(
+                    category_label,
+                    size=11,
+                    color=COLORS["bg"],
+                    weight=ft.FontWeight.BOLD,
+                ),
+                ft.Icon(
+                    ft.Icons.ARROW_DROP_DOWN,
+                    size=14,
+                    color=COLORS["bg"],
+                ),
+            ], spacing=0),
             bgcolor=cat_color,
             border_radius=6,
-            padding=ft.padding.Padding(6, 2, 6, 2),
+            padding=ft.padding.Padding(6, 2, 4, 2),
+            on_click=on_edit_category,
+            ink=True,
+            tooltip="Изменить категорию",
         )
 
         tomato_text = ft.Text(
             f"🍅 {pomodoro_count}",
             size=13,
             color=COLORS["text_secondary"],
+        )
+
+        # НОВОЕ: название с иконкой ✏️
+        title_row = ft.Row([
+            ft.Text(
+                task.title,
+                size=16,
+                color=COLORS["text_secondary"] if task.is_done else COLORS["text"],
+                italic=task.is_done,
+                expand=True,
+            ),
+            ft.Icon(
+                ft.Icons.EDIT_OUTLINED,
+                size=16,
+                color=COLORS["text_secondary"],
+            ),
+        ], spacing=6)
+
+        title_container = ft.Container(
+            content=title_row,
+            on_click=on_edit_title,
+            ink=True,
+            tooltip="Редактировать название",
         )
 
         return ft.Container(
@@ -177,12 +213,7 @@ class TasksScreen(ft.Column):
                     check_color=COLORS["primary"],
                 ),
                 ft.Column([
-                    ft.Text(
-                        task.title,
-                        size=16,
-                        color=COLORS["text_secondary"] if task.is_done else COLORS["text"],
-                        italic=task.is_done,
-                    ),
+                    title_container,
                     ft.Row([
                         category_badge,
                         tomato_text,
@@ -205,6 +236,110 @@ class TasksScreen(ft.Column):
             bgcolor=COLORS["surface"],
             margin=ft.Margin(0, 0, 0, 5),
         )
+
+    def _show_edit_dialog(self, task):
+        edit_field = ft.TextField(
+            value=task.title,
+            label="Название задачи",
+            border_color=COLORS["primary"],
+            color=COLORS["text"],
+            bgcolor=COLORS["surface"],
+            width=300,
+            autofocus=True,
+        )
+
+        def on_save(e):
+            new_title = edit_field.value.strip()
+            if new_title and new_title != task.title:
+                with SessionLocal() as db:
+                    update_task(db, task.id, title=new_title)
+                self.load_tasks()
+            dialog.open = False
+            self._page.update()
+
+        def on_cancel(e):
+            dialog.open = False
+            self._page.update()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Редактировать задачу"),
+            content=edit_field,
+            actions=[
+                ft.TextButton("Отмена", on_click=on_cancel),
+                ft.TextButton("Сохранить", on_click=on_save),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        def on_submit(e):
+            on_save(e)
+        edit_field.on_submit = on_submit
+
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _show_category_dialog(self, task):
+        def make_category_button(cat_key, cat_label):
+            color = CATEGORY_COLORS.get(cat_key, COLORS["primary"])
+            is_current = task.category == cat_key
+
+            def on_select(e):
+                if cat_key != task.category:
+                    with SessionLocal() as db:
+                        update_task(db, task.id, category=cat_key)
+                    self.load_tasks()
+                dialog.open = False
+                self._page.update()
+
+            return ft.Container(
+                content=ft.Row([
+                    ft.Container(width=12, height=12, border_radius=6, bgcolor=color),
+                    ft.Text(
+                        cat_label,
+                        size=15,
+                        color=COLORS["text"],
+                        weight=ft.FontWeight.BOLD if is_current else ft.FontWeight.NORMAL,
+                        expand=True,
+                    ),
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE if is_current else ft.Icons.CIRCLE_OUTLINED,
+                        size=20,
+                        color=COLORS["primary"] if is_current else COLORS["text_secondary"],
+                    ),
+                ], spacing=10),
+                padding=14,
+                bgcolor=COLORS["primary"] + "30" if is_current else COLORS["surface"],
+                border_radius=10,
+                margin=ft.Margin(0, 0, 0, 6),
+                on_click=on_select,
+                ink=True,
+                border=ft.BorderSide(1.5, COLORS["primary"]) if is_current else None,
+            )
+
+        category_buttons = [
+            make_category_button(key, label)
+            for key, label in CATEGORIES.items()
+        ]
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Выберите категорию"),
+            content=ft.Column(
+                category_buttons,
+                spacing=0,
+                height=250,
+            ),
+            actions=[
+                ft.TextButton("Закрыть", on_click=lambda e: self._close_dialog(dialog)),
+            ],
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
 
     def on_add_task(self, e):
         title = self.task_input.value.strip()

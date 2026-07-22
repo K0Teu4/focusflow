@@ -55,6 +55,18 @@ def delete_task(db: Session, task_id: int):
         db.delete(task)
         db.commit()
 
+def update_task(db: Session, task_id: int, title: str = None, category: str = None):
+    """Обновляет название и/или категорию задачи"""
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if task:
+        if title is not None:
+            task.title = title
+        if category is not None:
+            task.category = category
+        db.commit()
+        db.refresh(task)
+    return task
+
 
 def get_task_by_id(db: Session, task_id: int) -> Task:
     return db.query(Task).filter(Task.id == task_id).first()
