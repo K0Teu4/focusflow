@@ -1,10 +1,13 @@
 # ui/screens/stats_screen.py
 import flet as ft
+from pathlib import Path
 from ui.theme import COLORS
 from db.database import (
     SessionLocal, get_user_state, get_total_stats,
     get_daily_activity, get_current_streak, get_recent_sessions,
+    get_all_sessions_for_export,
 )
+from services.export_service import ExportService
 
 
 class StatsScreen(ft.Column):
@@ -39,7 +42,7 @@ class StatsScreen(ft.Column):
                 margin=ft.Margin(0, 0, 0, 10),
             ),
             ft.Text(
-                "Графики продуктивности, история сессий,\nсерия дней и общие достижения",
+                "Графики продуктивности, история сессий,\nсерия дней и экспорт данных",
                 size=16,
                 color=COLORS["text_secondary"],
                 text_align=ft.TextAlign.CENTER,
@@ -66,22 +69,23 @@ class StatsScreen(ft.Column):
 
         controls.append(
             ft.Container(
-                content=ft.Text(
-                    "📊 Статистика",
-                    size=28,
-                    weight=ft.FontWeight.BOLD,
-                    color=COLORS["text"],
-                ),
+                content=ft.Row([
+                    ft.Text(
+                        "📊 Статистика",
+                        size=28,
+                        weight=ft.FontWeight.BOLD,
+                        color=COLORS["text"],
+                    ),
+                ], alignment=ft.MainAxisAlignment.CENTER),
                 padding=ft.padding.Padding(20, 20, 20, 10),
-                alignment=ft.Alignment(0, 0),
             )
         )
 
         controls.append(self._build_summary_cards(total, streak))
         controls.append(self._build_activity_chart(activity))
+        controls.append(self._build_export_button())
         controls.append(self._build_recent_sessions(recent))
         controls.append(ft.Container(height=40))
-
         return controls
 
     def _build_summary_cards(self, total: dict, streak: int):
@@ -90,19 +94,13 @@ class StatsScreen(ft.Column):
             ("⏱", str(total['total_work_hours']), "Часов"),
             ("🔥", str(streak), "Дней"),
         ]
-
         cards = []
         for icon, value, label in cards_data:
             cards.append(
                 ft.Container(
                     content=ft.Column([
                         ft.Text(icon, size=24),
-                        ft.Text(
-                            value,
-                            size=28,
-                            weight=ft.FontWeight.BOLD,
-                            color=COLORS["primary"],
-                        ),
+                        ft.Text(value, size=28, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
                         ft.Text(label, size=12, color=COLORS["text_secondary"]),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
                     padding=12,
@@ -111,47 +109,29 @@ class StatsScreen(ft.Column):
                     expand=True,
                 )
             )
-
         return ft.Container(
             content=ft.Row(cards, spacing=10),
             padding=ft.padding.Padding(15, 0, 15, 0),
         )
 
     def _build_activity_chart(self, activity: list):
-        """Кастомный bar chart из Container'ов"""
         day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
         max_minutes = max([d['work_minutes'] for d in activity] + [1])
-        bar_max_height = 120  # px
+        bar_max_height = 120
 
         bars = []
         for d in activity:
             day_idx = d['date'].weekday()
             day_name = day_names[day_idx]
             minutes = d['work_minutes']
-
-            # Высота столбика пропорциональна значению
             bar_height = int((minutes / max_minutes) * bar_max_height) if max_minutes > 0 else 0
-            bar_height = max(bar_height, 4)  # минимум 4px чтобы было видно
-
-            # Определяем цвет: сегодня — яркий, остальные — приглушённый
-            is_today = d['date'].weekday() == activity[-1]['date'].weekday() and d == activity[-1]
+            bar_height = max(bar_height, 4)
+            is_today = d == activity[-1]
             bar_color = COLORS["primary"] if minutes > 0 else COLORS["surface"]
 
             bar_column = ft.Column([
-                # Значение над столбиком
-                ft.Text(
-                    str(minutes) if minutes > 0 else "",
-                    size=10,
-                    color=COLORS["text_secondary"],
-                ),
-                # Сам столбик
-                ft.Container(
-                    width=22,
-                    height=bar_height,
-                    bgcolor=bar_color,
-                    border_radius=4,
-                ),
-                # Подпись дня
+                ft.Text(str(minutes) if minutes > 0 else "", size=10, color=COLORS["text_secondary"]),
+                ft.Container(width=22, height=bar_height, bgcolor=bar_color, border_radius=4),
                 ft.Text(
                     day_name,
                     size=11,
@@ -164,7 +144,7 @@ class StatsScreen(ft.Column):
                 ft.Container(
                     content=bar_column,
                     expand=True,
-                    alignment=ft.Alignment(0, 1),  # прижимаем к низу
+                    alignment=ft.Alignment(0, 1),
                 )
             )
 
@@ -178,28 +158,80 @@ class StatsScreen(ft.Column):
                     ft.Text(f"{week_start}–{week_end}", size=12, color=COLORS["text_secondary"]),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Container(height=12),
-                # Ряд столбиков
                 ft.Container(
                     content=ft.Row(
-                        bars,
-                        spacing=6,
-                        vertical_alignment=ft.CrossAxisAlignment.END,
+                        bars, spacing=6, vertical_alignment=ft.CrossAxisAlignment.END,
                     ),
-                    height=bar_max_height + 50,  # место для подписей и значений
-                    padding=ft.padding.Padding(0, 0, 0, 0),
+                    height=bar_max_height + 50,
                 ),
                 ft.Container(height=6),
-                ft.Text(
-                    f"Пик: {max_minutes} мин",
-                    size=12,
-                    color=COLORS["text_secondary"],
-                ),
+                ft.Text(f"Пик: {max_minutes} мин", size=12, color=COLORS["text_secondary"]),
             ], spacing=0),
             padding=16,
             bgcolor=COLORS["surface"],
             border_radius=12,
             margin=ft.Margin(15, 10, 15, 0),
         )
+
+    def _build_export_button(self):
+        """Кнопка экспорта CSV — сохраняет в стандартную папку без диалога."""
+        self.export_status = ft.Text(
+            "",
+            size=12,
+            color=COLORS["text_secondary"],
+            margin=ft.Margin(0, 6, 0, 0),
+            text_align=ft.TextAlign.CENTER,
+        )
+
+        return ft.Container(
+            content=ft.Column([
+                ft.ElevatedButton(
+                    "📤 Экспорт в CSV",
+                    bgcolor=COLORS["primary"],
+                    color=COLORS["bg"],
+                    icon=ft.Icons.FILE_DOWNLOAD,
+                    on_click=self._on_export_click,
+                    width=250,
+                    height=48,
+                ),
+                self.export_status,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+            padding=12,
+            margin=ft.Margin(15, 10, 15, 0),
+            alignment=ft.Alignment(0, 0),
+        )
+
+    def _on_export_click(self, e):
+        """Сохраняет CSV в стандартную папку (Downloads/Documents)."""
+        try:
+            # Генерируем путь
+            file_path = ExportService.generate_full_path()
+            
+            # Получаем данные из БД
+            with SessionLocal() as db:
+                sessions = get_all_sessions_for_export(db)
+            
+            if not sessions:
+                self.export_status.value = "⚠ Нет сессий для экспорта"
+                self.export_status.color = COLORS["error"]
+                self._page.update()
+                return
+            
+            # Выполняем экспорт
+            success = ExportService.export_sessions_to_csv(sessions, file_path)
+            
+            if success:
+                self.export_status.value = f"✓ Сохранено: {file_path.name}\n📁 {file_path.parent}"
+                self.export_status.color = COLORS["success"]
+            else:
+                self.export_status.value = "✗ Ошибка при сохранении"
+                self.export_status.color = COLORS["error"]
+            
+        except Exception as ex:
+            self.export_status.value = f"⚠ Ошибка: {ex}"
+            self.export_status.color = COLORS["error"]
+        
+        self._page.update()
 
     def _build_recent_sessions(self, recent: list):
         type_icons = {

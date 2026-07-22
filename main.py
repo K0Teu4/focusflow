@@ -38,15 +38,13 @@ def main(page: ft.Page):
         timer_screen.timer_service.reload_settings()
         timer_screen.refresh_data()
 
-    # НОВОЕ: определяем on_open_premium ДО её использования
     def on_open_premium():
-        page.navigation_bar.selected_index = 4  # Вкладка Premium
+        page.navigation_bar.selected_index = 4
         screen_container.controls.clear()
         screen_container.controls.append(premium_screen)
         page.update()
 
     def on_premium_changed(is_premium: bool):
-        # Перезагружаем экран статистики с новым Premium статусом
         nonlocal stats_screen
         stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
         page.update()
@@ -54,10 +52,10 @@ def main(page: ft.Page):
     settings_screen = SettingsScreen(
         page,
         on_settings_changed=on_settings_changed,
-        on_open_premium=on_open_premium,  # передаём callback
+        on_open_premium=on_open_premium,
     )
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
-    stats_screen = StatsScreen(page, on_open_premium=on_open_premium)  # передаём callback
+    stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
 
     screen_container = ft.Column([timer_screen], expand=True)
 
@@ -84,26 +82,11 @@ def main(page: ft.Page):
         bgcolor=COLORS["surface"],
         indicator_color=COLORS["primary"],
         destinations=[
-            ft.NavigationBarDestination(
-                icon=ft.Icons.TIMER,
-                label="Таймер",
-            ),
-            ft.NavigationBarDestination(
-                icon=ft.Icons.CHECKLIST,
-                label="Задачи",
-            ),
-            ft.NavigationBarDestination(
-                icon=ft.Icons.BAR_CHART,
-                label="Статистика",
-            ),
-            ft.NavigationBarDestination(
-                icon=ft.Icons.SETTINGS,
-                label="Настройки",
-            ),
-            ft.NavigationBarDestination(
-                icon=ft.Icons.STAR,
-                label="Premium",
-            ),
+            ft.NavigationBarDestination(icon=ft.Icons.TIMER, label="Таймер"),
+            ft.NavigationBarDestination(icon=ft.Icons.CHECKLIST, label="Задачи"),
+            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART, label="Статистика"),
+            ft.NavigationBarDestination(icon=ft.Icons.SETTINGS, label="Настройки"),
+            ft.NavigationBarDestination(icon=ft.Icons.STAR, label="Premium"),
         ],
     )
 
