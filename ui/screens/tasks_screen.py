@@ -2,7 +2,7 @@
 import flet as ft
 from db.database import SessionLocal, get_tasks, create_task, complete_task, delete_task, get_task_session_count, update_task
 from db.models import CATEGORIES
-from ui.theme import COLORS
+from ui.theme import COLORS, SHADOWS
 
 CATEGORY_COLORS = {
     "work": COLORS["cat_work"],
@@ -231,10 +231,11 @@ class TasksScreen(ft.Column):
                     on_click=on_delete,
                 ),
             ]),
-            padding=10,
-            border_radius=10,
+            padding=14,
+            border_radius=16,  # НОВОЕ: увеличено с 10 до 16
             bgcolor=COLORS["surface"],
-            margin=ft.Margin(0, 0, 0, 5),
+            shadow=SHADOWS["card"],  # НОВОЕ: тень
+            margin=ft.Margin(0, 0, 0, 8),
         )
 
     def _show_edit_dialog(self, task):

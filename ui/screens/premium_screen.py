@@ -1,6 +1,6 @@
 # ui/screens/premium_screen.py
 import flet as ft
-from ui.theme import COLORS
+from ui.theme import COLORS, SHADOWS
 from db.database import SessionLocal, get_user_state, update_premium_status
 from datetime import datetime, timedelta
 
@@ -18,7 +18,7 @@ class PremiumScreen(ft.Column):
         self.refresh_data()
 
     def refresh_data(self):
-        """Перечитывает Premium статус из БД"""
+        """Перечитывает Premium статус из БД и пересобирает экран"""
         with SessionLocal() as db:
             user_state = get_user_state(db)
             self.is_premium = user_state.is_premium
@@ -31,6 +31,7 @@ class PremiumScreen(ft.Column):
     def _build_content(self):
         controls = []
 
+        # === КАРТОЧКА СТАТУСА PREMIUM ===
         if self.is_premium:
             expires_text = (
                 f"до {self.premium_expires.strftime('%d.%m.%Y')}"
@@ -40,13 +41,23 @@ class PremiumScreen(ft.Column):
                 ft.Container(
                     content=ft.Column([
                         ft.Text("⭐", size=40),
-                        ft.Text("Premium активен", size=22, weight=ft.FontWeight.BOLD, color=COLORS["success"]),
-                        ft.Text(f"Действует {expires_text}", size=14, color=COLORS["text_secondary"]),
+                        ft.Text(
+                            "Premium активен",
+                            size=22,
+                            weight=ft.FontWeight.BOLD,
+                            color=COLORS["success"],
+                        ),
+                        ft.Text(
+                            f"Действует {expires_text}",
+                            size=14,
+                            color=COLORS["text_secondary"],
+                        ),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
                     padding=24,
                     bgcolor=COLORS["surface"],
                     border_radius=16,
                     border=ft.BorderSide(2, COLORS["success"]),
+                    shadow=SHADOWS["card"],
                     margin=ft.Margin(20, 20, 20, 20),
                 )
             )
@@ -54,14 +65,23 @@ class PremiumScreen(ft.Column):
             controls.append(
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("FocusFlow Premium", size=32, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
-                        ft.Text("Разблокируйте все возможности", size=18, color=COLORS["text_secondary"]),
+                        ft.Text(
+                            "FocusFlow Premium",
+                            size=32,
+                            weight=ft.FontWeight.BOLD,
+                            color=COLORS["primary"],
+                        ),
+                        ft.Text(
+                            "Разблокируйте все возможности",
+                            size=18,
+                            color=COLORS["text_secondary"],
+                        ),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                     padding=ft.padding.Padding(20, 30, 20, 20),
                 )
             )
 
-        # ИСПРАВЛЕНО: убран Telegram-бот
+        # === СПИСОК ПРЕИМУЩЕСТВ ===
         features = [
             ("📊", "История и графики", "Статистика за всё время"),
             ("📤", "Экспорт данных", "Сохранение в CSV"),
@@ -77,58 +97,102 @@ class PremiumScreen(ft.Column):
                     content=ft.Row([
                         ft.Text(icon, size=24),
                         ft.Column([
-                            ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
-                            ft.Text(desc, size=12, color=COLORS["text_secondary"]),
+                            ft.Text(
+                                title,
+                                size=15,
+                                weight=ft.FontWeight.BOLD,
+                                color=COLORS["text"],
+                            ),
+                            ft.Text(
+                                desc,
+                                size=12,
+                                color=COLORS["text_secondary"],
+                            ),
                         ], spacing=2, expand=True),
-                        ft.Icon(ft.Icons.CHECK_CIRCLE, size=20, color=COLORS["success"]),
+                        ft.Icon(
+                            ft.Icons.CHECK_CIRCLE,
+                            size=20,
+                            color=COLORS["success"],
+                        ),
                     ], spacing=12),
                     padding=14,
                     bgcolor=COLORS["surface"],
-                    border_radius=12,
+                    border_radius=16,
+                    shadow=SHADOWS["card"],
                 )
             )
         controls.append(features_list)
 
+        # === ТАРИФЫ (только для Free) ===
         if not self.is_premium:
+            # 1 месяц
             monthly = ft.Container(
                 content=ft.Column([
                     ft.Text("1 месяц", size=14, color=COLORS["text_secondary"]),
-                    ft.Text("149 ₽", size=28, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
+                    ft.Text(
+                        "149 ₽",
+                        size=28,
+                        weight=ft.FontWeight.BOLD,
+                        color=COLORS["primary"],
+                    ),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
                 padding=20,
                 border=ft.BorderSide(2, COLORS["surface"]),
-                border_radius=12,
+                border_radius=16,
+                shadow=SHADOWS["card"],
                 width=140,
                 on_click=lambda e: self._show_purchase_dialog("monthly"),
                 ink=True,
             )
 
+            # 1 год с бейджем "Выгодно!"
             yearly = ft.Container(
                 content=ft.Column([
                     ft.Row([
                         ft.Text("1 год", size=14, color=COLORS["text_secondary"]),
                         ft.Container(
-                            content=ft.Text("🔥 Выгодно!", size=10, weight=ft.FontWeight.BOLD, color=COLORS["bg"]),
+                            content=ft.Text(
+                                "🔥 Выгодно!",
+                                size=10,
+                                weight=ft.FontWeight.BOLD,
+                                color=COLORS["bg"],
+                            ),
                             bgcolor=COLORS["success"],
                             border_radius=4,
                             padding=ft.padding.Padding(4, 2, 4, 2),
                         ),
                     ], alignment=ft.MainAxisAlignment.CENTER, spacing=6),
-                    ft.Text("990 ₽", size=28, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
-                    ft.Text("−45%", size=13, color=COLORS["success"], weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        "990 ₽",
+                        size=28,
+                        weight=ft.FontWeight.BOLD,
+                        color=COLORS["primary"],
+                    ),
+                    ft.Text(
+                        "−45%",
+                        size=13,
+                        color=COLORS["success"],
+                        weight=ft.FontWeight.BOLD,
+                    ),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
                 padding=20,
                 border=ft.BorderSide(2, COLORS["primary"]),
-                border_radius=12,
+                border_radius=16,
+                shadow=SHADOWS["card"],
                 width=140,
                 on_click=lambda e: self._show_purchase_dialog("yearly"),
                 ink=True,
             )
 
             controls.append(
-                ft.Row([monthly, yearly], alignment=ft.MainAxisAlignment.CENTER, spacing=20)
+                ft.Row(
+                    [monthly, yearly],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=20,
+                )
             )
 
+            # Кнопка "Купить Premium" на всю ширину
             controls.append(
                 ft.Container(
                     content=ft.ElevatedButton(
@@ -144,6 +208,7 @@ class PremiumScreen(ft.Column):
                 )
             )
 
+            # Текстовая ссылка "Восстановить покупку"
             controls.append(
                 ft.TextButton(
                     "Восстановить покупку",
@@ -157,10 +222,12 @@ class PremiumScreen(ft.Column):
         return controls
 
     def _show_purchase_dialog(self, plan: str):
+        """Показывает диалог покупки (заглушка для RuStore Billing)"""
         plan_name = "1 месяц" if plan == "monthly" else "1 год"
         price = "149 ₽" if plan == "monthly" else "990 ₽"
 
         def on_confirm(e):
+            # Заглушка: активируем Premium на 30/365 дней
             days = 30 if plan == "monthly" else 365
             expires_at = datetime.utcnow() + timedelta(days=days)
 
@@ -170,16 +237,22 @@ class PremiumScreen(ft.Column):
             dialog.open = False
             self._page.update()
 
-            # НОВОЕ: обновляем оба экрана после покупки
+            # Обновляем оба экрана после покупки
             self.refresh_data()
             if self.on_premium_changed:
                 self.on_premium_changed(True)
 
+            # Показываем успех
             success_dialog = ft.AlertDialog(
                 title=ft.Text("🎉 Premium активирован!"),
-                content=ft.Text(f"Подписка '{plan_name}' активна до {expires_at.strftime('%d.%m.%Y')}"),
+                content=ft.Text(
+                    f"Подписка '{plan_name}' активна до {expires_at.strftime('%d.%m.%Y')}"
+                ),
                 actions=[
-                    ft.TextButton("Отлично", on_click=lambda e: self._close_dialog(success_dialog)),
+                    ft.TextButton(
+                        "Отлично",
+                        on_click=lambda e: self._close_dialog(success_dialog),
+                    ),
                 ],
             )
             self._page.overlay.append(success_dialog)
@@ -194,10 +267,18 @@ class PremiumScreen(ft.Column):
             title=ft.Text(f"Купить Premium ({plan_name})"),
             content=ft.Column([
                 ft.Text(f"Стоимость: {price}", size=16),
-                ft.Text("Подписка активируется автоматически", size=14, color=COLORS["text_secondary"]),
+                ft.Text(
+                    "Подписка активируется автоматически",
+                    size=14,
+                    color=COLORS["text_secondary"],
+                ),
                 ft.Container(height=8),
-                ft.Text("В реальной версии — интеграция с RuStore Billing",
-                       size=12, color=COLORS["text_secondary"], italic=True),
+                ft.Text(
+                    "В реальной версии — интеграция с RuStore Billing",
+                    size=12,
+                    color=COLORS["text_secondary"],
+                    italic=True,
+                ),
             ], spacing=8),
             actions=[
                 ft.TextButton("Отмена", on_click=on_cancel),
@@ -210,11 +291,17 @@ class PremiumScreen(ft.Column):
         self._page.update()
 
     def _on_restore(self, e):
+        """Восстановление покупки (заглушка)"""
         dialog = ft.AlertDialog(
             title=ft.Text("Восстановление покупки"),
-            content=ft.Text("В реальной версии — проверка через RuStore Billing API"),
+            content=ft.Text(
+                "В реальной версии — проверка через RuStore Billing API"
+            ),
             actions=[
-                ft.TextButton("Понятно", on_click=lambda e: self._close_dialog(dialog)),
+                ft.TextButton(
+                    "Понятно",
+                    on_click=lambda e: self._close_dialog(dialog),
+                ),
             ],
         )
         self._page.overlay.append(dialog)

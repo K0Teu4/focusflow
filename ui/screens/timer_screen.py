@@ -3,7 +3,7 @@ import flet as ft
 import asyncio
 from services.timer_service import TimerService
 from db.database import SessionLocal, get_tasks, get_today_stats, get_settings, get_task_by_id
-from ui.theme import COLORS
+from ui.theme import COLORS, GRADIENTS, SHADOWS
 
 
 class TimerScreen(ft.Column):
@@ -19,21 +19,23 @@ class TimerScreen(ft.Column):
         self.selected_task_id = None
         self._auto_start_task = None
 
+        # Градиентный фон таймера
         self.timer_bg = ft.Container(
-            width=220,
-            height=220,
-            border_radius=110,
-            bgcolor=COLORS["work_bg"],
+            width=240,
+            height=240,
+            border_radius=120,
+            gradient=GRADIENTS["work"],
             alignment=ft.Alignment(0, 0),
+            shadow=SHADOWS["elevated"],
             content=ft.ProgressRing(
                 value=0.0,
-                width=200,
-                height=200,
-                stroke_width=8,
+                width=210,
+                height=210,
+                stroke_width=10,
                 color=COLORS["work"],
                 bgcolor=COLORS["surface"],
             ),
-            margin=ft.Margin(0, 20, 0, 12),
+            margin=ft.Margin(0, 20, 0, 16),
         )
         self.progress_ring = self.timer_bg.content
 
@@ -72,7 +74,7 @@ class TimerScreen(ft.Column):
             "📋 Выбрать задачу",
             style=ft.ButtonStyle(color=COLORS["primary"]),
             on_click=self._show_task_picker_dialog,
-            margin=ft.Margin(0, 0, 0, 20),  # НОВОЕ: отступ снизу
+            margin=ft.Margin(0, 0, 0, 20),
         )
 
         self.start_button = ft.ElevatedButton(
@@ -305,22 +307,25 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def _apply_mode_colors(self):
+        """Обновляет цвета и градиент в зависимости от режима"""
         mode = self.timer_service.get_mode_key()
+        
+        # ИСПРАВЛЕНО: gradient определена во всех ветках
         if mode == "work":
             ring_color = COLORS["work"]
-            bg_color = COLORS["work_bg"]
+            gradient = GRADIENTS["work"]
             pause_color = COLORS["pause_work"]
         elif mode == "long_break":
             ring_color = COLORS["long_break"]
-            bg_color = COLORS["long_break_bg"]
+            gradient = GRADIENTS["long_break"]
             pause_color = COLORS["pause_rest"]
         else:
             ring_color = COLORS["rest"]
-            bg_color = COLORS["rest_bg"]
+            gradient = GRADIENTS["rest"]
             pause_color = COLORS["pause_rest"]
 
         self.progress_ring.color = ring_color
-        self.timer_bg.bgcolor = bg_color
+        self.timer_bg.gradient = gradient
         self.time_display.color = ring_color
         self.pause_button.bgcolor = pause_color
 

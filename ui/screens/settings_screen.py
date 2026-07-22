@@ -153,7 +153,7 @@ class SettingsScreen(ft.Column):
                 ], spacing=12),
                 padding=16,
                 bgcolor=COLORS["surface"],
-                border_radius=12,
+                border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             )
         else:
@@ -181,7 +181,7 @@ class SettingsScreen(ft.Column):
                 ], horizontal_alignment=ft.CrossAxisAlignment.START),
                 padding=20,
                 bgcolor=COLORS["surface"],
-                border_radius=12,
+                border_radius=16,
                 border=primary_border,
                 margin=ft.Margin(20, 0, 20, 0),
             )
@@ -214,7 +214,7 @@ class SettingsScreen(ft.Column):
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
-                border_radius=10,
+                border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
             ft.Container(
@@ -231,7 +231,7 @@ class SettingsScreen(ft.Column):
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
-                border_radius=10,
+                border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
             ft.Container(
@@ -245,7 +245,7 @@ class SettingsScreen(ft.Column):
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
-                border_radius=10,
+                border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
             ft.Container(height=40),
@@ -326,7 +326,7 @@ class SettingsScreen(ft.Column):
                 ]),
                 padding=12,
                 bgcolor=COLORS["primary"] + "30" if is_selected else COLORS["surface"],
-                border_radius=10,
+                border_radius=16,
                 margin=ft.Margin(0, 0, 0, 6),
                 on_click=on_select,
                 ink=True,
