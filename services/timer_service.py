@@ -5,14 +5,15 @@ from datetime import datetime
 from db.database import SessionLocal, create_session, get_settings
 from services.sound_service import SoundService
 
+
 class TimerService:
     def __init__(self, work_min=25, break_min=5):
         try:
             with SessionLocal() as db:
                 settings = get_settings(db)
-                self.work_sec = int(settings.get("work_min", work_min) * 60)
-                self.break_sec = int(settings.get("break_min", break_min) * 60)
-                self.long_break_sec = int(settings.get("long_break_min", 15) * 60)
+                self.work_sec = self._calc_seconds(settings, "work", work_min)
+                self.break_sec = self._calc_seconds(settings, "break", break_min)
+                self.long_break_sec = self._calc_seconds(settings, "long_break", 15)
                 self.sessions_until_long_break = int(settings.get("sessions_until_long_break", 4))
                 self.auto_start_delay = int(settings.get("auto_start_delay", 3))
         except:
@@ -36,13 +37,29 @@ class TimerService:
         self._task: Optional[asyncio.Task] = None
         self.just_finished = False
 
+    @staticmethod
+    def _calc_seconds(settings: dict, key: str, default_min: int) -> int:
+        """Вычисляет секунды с поддержкой старого формата (только минуты) и нового (мин+сек)."""
+        # Новый формат
+        if f"{key}_min" in settings or f"{key}_sec" in settings:
+            mins = int(settings.get(f"{key}_min", 0) or 0)
+            secs = int(settings.get(f"{key}_sec", 0) or 0)
+            total = mins * 60 + secs
+            if total > 0:
+                return total
+        # Старый формат (только минуты)
+        legacy_min = settings.get(f"{key}_min")
+        if legacy_min is not None:
+            return int(legacy_min) * 60
+        return int(default_min * 60)
+
     def reload_settings(self):
         try:
             with SessionLocal() as db:
                 settings = get_settings(db)
-                self.work_sec = int(settings.get("work_min", 25) * 60)
-                self.break_sec = int(settings.get("break_min", 5) * 60)
-                self.long_break_sec = int(settings.get("long_break_min", 15) * 60)
+                self.work_sec = self._calc_seconds(settings, "work", 25)
+                self.break_sec = self._calc_seconds(settings, "break", 5)
+                self.long_break_sec = self._calc_seconds(settings, "long_break", 15)
                 self.sessions_until_long_break = int(settings.get("sessions_until_long_break", 4))
                 self.auto_start_delay = int(settings.get("auto_start_delay", 3))
                 if not self.is_running:
@@ -63,10 +80,10 @@ class TimerService:
             with SessionLocal() as db:
                 settings = get_settings(db)
                 self._sound_enabled = settings.get("sound_enabled", sound_enabled)
-                self._sound_type = settings.get("sound_type", "bell")  # НОВОЕ
+                self._sound_type = settings.get("sound_type", "bell")
         except:
             self._sound_enabled = sound_enabled
-            self._sound_type = "bell"   
+            self._sound_type = "bell"
 
         self.is_running = True
         self.just_finished = False

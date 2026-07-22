@@ -1,7 +1,7 @@
 # ui/screens/settings_screen.py
 import flet as ft
 from db.database import SessionLocal, get_settings, update_settings, get_user_state
-from services.sound_service import SoundService
+from services.sound_service import SoundService, SOUNDS
 from ui.theme import COLORS
 
 
@@ -17,7 +17,6 @@ class SettingsScreen(ft.Column):
         self.on_open_premium = on_open_premium
         self.sound_service = SoundService()
 
-        # Загружаем текущие значения
         with SessionLocal() as db:
             settings = get_settings(db)
             user_state = get_user_state(db)
@@ -27,38 +26,56 @@ class SettingsScreen(ft.Column):
         def auto_save(e=None):
             self._save_current_values()
 
-        # === ПОЛЯ ДЛИТЕЛЬНОСТИ ===
-        self.work_min_field = ft.TextField(
-            label="Работа (минуты)",
-            value=str(settings.get("work_min", 25)),
-            keyboard_type=ft.KeyboardType.NUMBER,
-            border_color=COLORS["primary"],
-            color=COLORS["text"],
-            bgcolor=COLORS["surface"],
-            width=200,
-            on_change=auto_save,
-        )
+        # === ДЛИТЕЛЬНОСТЬ: мин + сек ===
+        def make_time_row(label: str, min_val: int, sec_val: int):
+            min_field = ft.TextField(
+                label="мин",
+                value=str(min_val),
+                keyboard_type=ft.KeyboardType.NUMBER,
+                border_color=COLORS["primary"],
+                color=COLORS["text"],
+                bgcolor=COLORS["surface"],
+                width=80,
+                text_align=ft.TextAlign.CENTER,
+                on_change=auto_save,
+            )
+            sec_field = ft.TextField(
+                label="сек",
+                value=str(sec_val),
+                keyboard_type=ft.KeyboardType.NUMBER,
+                border_color=COLORS["primary"],
+                color=COLORS["text"],
+                bgcolor=COLORS["surface"],
+                width=80,
+                text_align=ft.TextAlign.CENTER,
+                on_change=auto_save,
+            )
+            return (
+                min_field,
+                sec_field,
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text(label, size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
+                        ft.Row([min_field, sec_field], spacing=10),
+                    ], spacing=6),
+                    padding=ft.padding.Padding(0, 4, 0, 4),
+                ),
+            )
 
-        self.break_min_field = ft.TextField(
-            label="Короткий отдых (минуты)",
-            value=str(settings.get("break_min", 5)),
-            keyboard_type=ft.KeyboardType.NUMBER,
-            border_color=COLORS["primary"],
-            color=COLORS["text"],
-            bgcolor=COLORS["surface"],
-            width=200,
-            on_change=auto_save,
+        self.work_min_field, self.work_sec_field, work_row = make_time_row(
+            "Работа",
+            int(settings.get("work_min", 25)),
+            int(settings.get("work_sec", 0)),
         )
-
-        self.long_break_min_field = ft.TextField(
-            label="Длинный перерыв (минуты)",
-            value=str(settings.get("long_break_min", 15)),
-            keyboard_type=ft.KeyboardType.NUMBER,
-            border_color=COLORS["primary"],
-            color=COLORS["text"],
-            bgcolor=COLORS["surface"],
-            width=200,
-            on_change=auto_save,
+        self.break_min_field, self.break_sec_field, break_row = make_time_row(
+            "Короткий отдых",
+            int(settings.get("break_min", 5)),
+            int(settings.get("break_sec", 0)),
+        )
+        self.long_break_min_field, self.long_break_sec_field, long_break_row = make_time_row(
+            "Длинный перерыв",
+            int(settings.get("long_break_min", 15)),
+            int(settings.get("long_break_sec", 0)),
         )
 
         self.sessions_until_long_break_field = ft.TextField(
@@ -73,56 +90,35 @@ class SettingsScreen(ft.Column):
         )
 
         # === ПОВЕДЕНИЕ ===
-        self.sound_checkbox = ft.Checkbox(
+        self.sound_checkbox = ft.Switch(
             label="Звук при завершении",
             value=settings.get("sound_enabled", True),
-            check_color=COLORS["primary"],
+            active_color=COLORS["primary"],
+            inactive_thumb_color=COLORS["text_secondary"],
             on_change=auto_save,
+            label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
         )
 
-        # === НОВОЕ: Dropdown выбора звука ===
+        # НОВОЕ: кнопка выбора звука (открывает диалог)
         current_sound = settings.get("sound_type", "bell")
-        sound_options = SoundService.get_all_sounds(is_premium=self.is_premium)
-
-        self.sound_dropdown = ft.Dropdown(
-            label="Звук уведомления",
-            value=current_sound,
-            width=250,
-            border_color=COLORS["primary"],
-            color=COLORS["text"],
+        current_sound_name = SOUNDS.get(current_sound, SOUNDS["bell"])["name"]
+        self.sound_button = ft.ElevatedButton(
+            f"🎵 {current_sound_name}",
             bgcolor=COLORS["surface"],
-            options=[
-                ft.dropdown.Option(key=sid, text=name)
-                for sid, name in sound_options.items()
-            ],
-        )
-        self.sound_dropdown.on_change = self._on_sound_change  # НОВОЕ: назначаем отдельно
-
-        self.test_sound_button = ft.OutlinedButton(
-            "▶ Тест",
-            style=ft.ButtonStyle(
-                side=ft.BorderSide(1.5, COLORS["primary"]),
-                color=COLORS["primary"],
-            ),
-            on_click=self._on_test_sound,
-            width=80,
-            height=42,
+            color=COLORS["text"],
+            icon=ft.Icons.ARROW_DROP_DOWN,
+            on_click=self._open_sound_dialog,
+            width=280,
+            height=48,
         )
 
-        self.sound_row = ft.Column(
-            [
-                self.sound_dropdown,
-                self.test_sound_button,
-            ],
-            spacing=8,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-
-        self.auto_start_checkbox = ft.Checkbox(
+        self.auto_start_checkbox = ft.Switch(
             label="Автостарт следующей сессии",
             value=settings.get("auto_start", False),
-            check_color=COLORS["primary"],
+            active_color=COLORS["primary"],
+            inactive_thumb_color=COLORS["text_secondary"],
             on_change=auto_save,
+            label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
         )
 
         self.auto_start_delay_field = ft.TextField(
@@ -136,10 +132,9 @@ class SettingsScreen(ft.Column):
             on_change=auto_save,
         )
 
-        # === СТАТУС ===
         self.status_message = ft.Text(
-            "✓ Автосохранение включено",
-            size=14,
+            "✓ Автосохранение",
+            size=13,
             color=COLORS["success"],
         )
 
@@ -149,8 +144,7 @@ class SettingsScreen(ft.Column):
         if self.is_premium:
             expires_text = (
                 f"до {self.premium_expires.strftime('%d.%m.%Y')}"
-                if self.premium_expires
-                else "бессрочно"
+                if self.premium_expires else "бессрочно"
             )
             self.premium_status = ft.Container(
                 content=ft.Row([
@@ -174,7 +168,7 @@ class SettingsScreen(ft.Column):
                     ], spacing=8),
                     ft.Container(height=8),
                     ft.Text(
-                        "Разблокируйте 3+ звука, графики, экспорт и темы",
+                        "Графики, экспорт, 3+ звука и темы",
                         size=13,
                         color=COLORS["text_secondary"],
                     ),
@@ -208,9 +202,10 @@ class SettingsScreen(ft.Column):
                 content=ft.Column([
                     ft.Text("Длительность", size=18, color=COLORS["text"]),
                     ft.Container(height=8),
-                    self.work_min_field,
-                    self.break_min_field,
-                    self.long_break_min_field,
+                    work_row,
+                    break_row,
+                    long_break_row,
+                    ft.Container(height=8),
                     self.sessions_until_long_break_field,
                 ], spacing=8),
                 padding=20,
@@ -218,13 +213,13 @@ class SettingsScreen(ft.Column):
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Поведение + звук
+            # Поведение
             ft.Container(
                 content=ft.Column([
                     ft.Text("Поведение", size=18, color=COLORS["text"]),
                     ft.Container(height=8),
                     self.sound_checkbox,
-                    self.sound_row,  # НОВОЕ
+                    self.sound_button,
                     ft.Container(height=8),
                     self.auto_start_checkbox,
                     self.auto_start_delay_field,
@@ -234,7 +229,7 @@ class SettingsScreen(ft.Column):
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Premium функции (оставшиеся)
+            # Premium функции
             ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -244,7 +239,6 @@ class SettingsScreen(ft.Column):
                     ft.Container(height=8),
                     self._create_locked_feature(ft.Icons.PALETTE, "Кастомные темы"),
                     self._create_locked_feature(ft.Icons.BAR_CHART, "Расширенная статистика"),
-                    self._create_locked_feature(ft.Icons.FILE_DOWNLOAD, "Экспорт в CSV/PDF"),
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
@@ -283,33 +277,103 @@ class SettingsScreen(ft.Column):
             ink=True,
         )
 
-    # === НОВОЕ: обработчики звука ===
-    def _on_sound_change(self, e):
-        selected = self.sound_dropdown.value
-        # Если выбран Premium-звук и нет подписки — возвращаем bell
-        if SoundService.is_premium_required(selected) and not self.is_premium:
-            self._show_premium_dialog_for_sound()
-            self.sound_dropdown.value = "bell"
-            self._page.update()
-            return
-        self._save_current_values()
+    # === НОВОЕ: диалог выбора звука ===
+    def _open_sound_dialog(self, e):
+        current = self._get_current_sound_type()
 
-    def _on_test_sound(self, e):
-        """Воспроизводит выбранный звук"""
-        selected = self.sound_dropdown.value
-        if SoundService.is_premium_required(selected) and not self.is_premium:
-            self._show_premium_dialog_for_sound()
-            return
-        self.sound_service.play(selected)
+        def make_sound_row(sound_id, info):
+            name = info["name"]
+            is_premium_sound = info["premium"]
+            is_locked = is_premium_sound and not self.is_premium
+            is_selected = sound_id == current
 
-    def _show_premium_dialog_for_sound(self):
-        """Показывает диалог: звук доступен только в Premium"""
+            display_name = f"🔒 {name}" if is_locked else name
+
+            def on_select(ev):
+                if is_locked:
+                    self._show_premium_for_sound_dialog()
+                    return
+                self._set_current_sound(sound_id)
+                sound_dialog.open = False
+                self._page.update()
+
+            def on_test(ev):
+                if is_locked:
+                    self._show_premium_for_sound_dialog()
+                    return
+                self.sound_service.play(sound_id)
+
+            return ft.Container(
+                content=ft.Row([
+                    ft.Text(
+                        display_name,
+                        size=15,
+                        color=COLORS["text"] if not is_locked else COLORS["text_secondary"],
+                        weight=ft.FontWeight.BOLD if is_selected else ft.FontWeight.NORMAL,
+                        expand=True,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.PLAY_CIRCLE,
+                        icon_color=COLORS["primary"] if not is_locked else COLORS["text_secondary"],
+                        on_click=on_test,
+                        tooltip="Тест",
+                    ),
+                ]),
+                padding=12,
+                bgcolor=COLORS["primary"] + "30" if is_selected else COLORS["surface"],
+                border_radius=10,
+                margin=ft.Margin(0, 0, 0, 6),
+                on_click=on_select,
+                ink=True,
+                border=ft.BorderSide(1.5, COLORS["primary"]) if is_selected else None,
+            )
+
+        sound_rows = []
+        for sound_id, info in SOUNDS.items():
+            sound_rows.append(make_sound_row(sound_id, info))
+
+        sound_dialog = ft.AlertDialog(
+            title=ft.Text("Выберите звук"),
+            content=ft.Column(
+                sound_rows,
+                spacing=0,
+                scroll=ft.ScrollMode.AUTO,
+                height=300,
+            ),
+            actions=[
+                ft.TextButton("Закрыть", on_click=lambda e: self._close_dialog(sound_dialog)),
+            ],
+        )
+        self._page.overlay.append(sound_dialog)
+        sound_dialog.open = True
+        self._page.update()
+
+    def _get_current_sound_type(self) -> str:
+        with SessionLocal() as db:
+            settings = get_settings(db)
+            return settings.get("sound_type", "bell")
+
+    def _set_current_sound(self, sound_id: str):
+        with SessionLocal() as db:
+            settings = get_settings(db)
+            settings["sound_type"] = sound_id
+            update_settings(db, settings)
+        # Обновляем текст кнопки
+        name = SOUNDS.get(sound_id, SOUNDS["bell"])["name"]
+        self.sound_button.text = f"🎵 {name}"
+        self.status_message.value = "✓ Сохранено"
+        self.status_message.color = COLORS["success"]
+        self._page.update()
+        if self.on_settings_changed:
+            self.on_settings_changed(settings)
+
+    def _show_premium_for_sound_dialog(self):
         dialog = ft.AlertDialog(
             title=ft.Text("🔒 Premium звук"),
             content=ft.Text("Этот звук доступен только в Premium версии."),
             actions=[
                 ft.TextButton("Остаться на Free", on_click=lambda e: self._close_dialog(dialog)),
-                ft.TextButton("Открыть Premium", on_click=lambda e: self._open_premium_from_dialog(dialog)),
+                ft.TextButton("Открыть Premium", on_click=lambda e: self._go_to_premium(dialog)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -317,7 +381,7 @@ class SettingsScreen(ft.Column):
         dialog.open = True
         self._page.update()
 
-    def _open_premium_from_dialog(self, dialog):
+    def _go_to_premium(self, dialog):
         dialog.open = False
         self._page.update()
         self._navigate_to_premium()
@@ -333,26 +397,53 @@ class SettingsScreen(ft.Column):
     def _save_current_values(self):
         try:
             work_min = int(self.work_min_field.value or 0)
+            work_sec = int(self.work_sec_field.value or 0)
             break_min = int(self.break_min_field.value or 0)
+            break_sec = int(self.break_sec_field.value or 0)
             long_break_min = int(self.long_break_min_field.value or 0)
+            long_break_sec = int(self.long_break_sec_field.value or 0)
             sessions = int(self.sessions_until_long_break_field.value or 0)
             delay = int(self.auto_start_delay_field.value or 0)
 
-            if work_min <= 0 or break_min <= 0 or long_break_min <= 0 or sessions <= 0 or delay < 1:
-                self.status_message.value = "⚠ Введите корректные значения"
+            # Валидация: общее время каждой сессии > 0
+            if work_min * 60 + work_sec <= 0:
+                self.status_message.value = "⚠ Работа: время > 0"
+                self.status_message.color = COLORS["error"]
+                self._page.update()
+                return
+            if break_min * 60 + break_sec <= 0:
+                self.status_message.value = "⚠ Отдых: время > 0"
+                self.status_message.color = COLORS["error"]
+                self._page.update()
+                return
+            if long_break_min * 60 + long_break_sec <= 0:
+                self.status_message.value = "⚠ Длинный: время > 0"
+                self.status_message.color = COLORS["error"]
+                self._page.update()
+                return
+            if sessions <= 0 or delay < 1:
+                self.status_message.value = "⚠ Проверьте значения"
+                self.status_message.color = COLORS["error"]
+                self._page.update()
+                return
+            if work_sec >= 60 or break_sec >= 60 or long_break_sec >= 60:
+                self.status_message.value = "⚠ Секунды должны быть < 60"
                 self.status_message.color = COLORS["error"]
                 self._page.update()
                 return
 
             settings = {
                 "work_min": work_min,
+                "work_sec": work_sec,
                 "break_min": break_min,
+                "break_sec": break_sec,
                 "long_break_min": long_break_min,
+                "long_break_sec": long_break_sec,
                 "sessions_until_long_break": sessions,
                 "sound_enabled": self.sound_checkbox.value,
                 "auto_start": self.auto_start_checkbox.value,
                 "auto_start_delay": delay,
-                "sound_type": self.sound_dropdown.value or "bell",
+                "sound_type": self._get_current_sound_type(),
                 "theme": "dark",
             }
 

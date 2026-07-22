@@ -110,10 +110,15 @@ def get_today_stats(db: Session):
 
 def get_settings(db: Session) -> dict:
     user_state = get_user_state(db)
-    return user_state.settings or {
+    settings = user_state.settings or {}
+    # Дефолты с поддержкой минут+секунд
+    defaults = {
         "work_min": 25,
+        "work_sec": 0,
         "break_min": 5,
+        "break_sec": 0,
         "long_break_min": 15,
+        "long_break_sec": 0,
         "sessions_until_long_break": 4,
         "sound_enabled": True,
         "auto_start": False,
@@ -121,6 +126,9 @@ def get_settings(db: Session) -> dict:
         "sound_type": "bell",
         "theme": "dark",
     }
+    # Миграция: если в старых настройках нет work_sec, но есть work_min — ок, _calc_seconds разберётся
+    merged = {**defaults, **settings}
+    return merged
 
 
 def update_settings(db: Session, settings: dict):
