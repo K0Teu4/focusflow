@@ -41,12 +41,15 @@ def main(page: ft.Page):
     def on_open_premium():
         page.navigation_bar.selected_index = 4
         screen_container.controls.clear()
+        premium_screen.refresh_data()  # НОВОЕ: обновляем перед показом
         screen_container.controls.append(premium_screen)
         page.update()
 
     def on_premium_changed(is_premium: bool):
-        nonlocal stats_screen
-        stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
+        # НОВОЕ: обновляем оба экрана после покупки
+        stats_screen.refresh_data()
+        premium_screen.refresh_data()
+        settings_screen.refresh_data()
         page.update()
 
     settings_screen = SettingsScreen(
@@ -63,16 +66,19 @@ def main(page: ft.Page):
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
         if index == 0:
-            screen_container.controls.append(timer_screen)
             timer_screen.refresh_data()
+            screen_container.controls.append(timer_screen)
         elif index == 1:
-            screen_container.controls.append(tasks_screen)
             tasks_screen.refresh_data()
+            screen_container.controls.append(tasks_screen)
         elif index == 2:
+            stats_screen.refresh_data()  # НОВОЕ: обновляем статистику
             screen_container.controls.append(stats_screen)
         elif index == 3:
+            settings_screen.refresh_data()  # НОВОЕ
             screen_container.controls.append(settings_screen)
         elif index == 4:
+            premium_screen.refresh_data()  # НОВОЕ
             screen_container.controls.append(premium_screen)
         page.update()
 

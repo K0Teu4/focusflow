@@ -20,7 +20,10 @@ class StatsScreen(ft.Column):
         )
         self._page = page
         self.on_open_premium = on_open_premium
+        self.refresh_data()
 
+    def refresh_data(self):
+        """Перечитывает данные из БД и пересобирает экран"""
         with SessionLocal() as db:
             user_state = get_user_state(db)
             self.is_premium = user_state.is_premium
@@ -29,6 +32,8 @@ class StatsScreen(ft.Column):
             self.controls = self._build_paywall()
         else:
             self.controls = self._build_premium_content()
+        if hasattr(self, '_page'):
+            self._page.update()
 
     def _build_paywall(self):
         return [
@@ -107,7 +112,6 @@ class StatsScreen(ft.Column):
         )
 
     def _build_activity_chart(self, activity: list):
-        """ИСПРАВЛЕНО: дни недели ВСЕГДА снизу"""
         day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
         max_minutes = max([d['work_minutes'] for d in activity] + [1])
         bar_max_height = 100
@@ -122,8 +126,6 @@ class StatsScreen(ft.Column):
             is_today = d == activity[-1]
             bar_color = COLORS["primary"] if minutes > 0 else COLORS["surface"]
 
-            # ИСПРАВЛЕНО: каждая колонка — это Column с фиксированной высотой
-            # Значение сверху, столбик по центру, день ВСЕГДА снизу
             bar_column = ft.Column(
                 [
                     ft.Text(
@@ -146,7 +148,7 @@ class StatsScreen(ft.Column):
                             weight=ft.FontWeight.BOLD if is_today else ft.FontWeight.NORMAL,
                         ),
                         height=20,
-                        alignment=ft.Alignment(0, 1),  # ВСЕГДА прижато к низу
+                        alignment=ft.Alignment(0, 1),
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -189,10 +191,10 @@ class StatsScreen(ft.Column):
         )
 
     def _build_export_button(self):
-        """Кнопка экспорта — НОВОЕ: SnackBar вместо текстового статуса"""
+        # ИСПРАВЛЕНО: убран эмодзи "📤" из текста, оставлена только иконка
         return ft.Container(
             content=ft.ElevatedButton(
-                "📤 Экспорт в CSV",
+                "Экспорт в CSV",
                 bgcolor=COLORS["primary"],
                 color=COLORS["bg"],
                 icon=ft.Icons.FILE_DOWNLOAD,
@@ -206,7 +208,6 @@ class StatsScreen(ft.Column):
         )
 
     def _on_export_click(self, e):
-        """Экспорт с SnackBar уведомлением"""
         try:
             file_path = ExportService.generate_full_path()
 

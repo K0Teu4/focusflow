@@ -19,7 +19,6 @@ class TimerScreen(ft.Column):
         self.selected_task_id = None
         self._auto_start_task = None
 
-        # Круговой прогресс-бар
         self.timer_bg = ft.Container(
             width=220,
             height=220,
@@ -38,7 +37,6 @@ class TimerScreen(ft.Column):
         )
         self.progress_ring = self.timer_bg.content
 
-        # НОВОЕ: "Сессия 0 из 4" вместо "0/4"
         self.session_type_text = ft.Text(
             self.timer_service.get_session_type_display(),
             size=22,
@@ -62,13 +60,19 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 8),
         )
 
-        # НОВОЕ: "Выполняется: [задача]" вместо dropdown
         self.current_task_text = ft.Text(
             "Без задачи",
             size=16,
             color=COLORS["text_secondary"],
             italic=True,
-            margin=ft.Margin(0, 0, 0, 12),
+            margin=ft.Margin(0, 0, 0, 4),
+        )
+
+        self.select_task_button = ft.TextButton(
+            "📋 Выбрать задачу",
+            style=ft.ButtonStyle(color=COLORS["primary"]),
+            on_click=self._show_task_picker_dialog,
+            margin=ft.Margin(0, 0, 0, 20),  # НОВОЕ: отступ снизу
         )
 
         self.start_button = ft.ElevatedButton(
@@ -113,7 +117,6 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 12, 0, 0),
         )
 
-        # Автостарт
         self.auto_start_bar = ft.ProgressBar(
             value=0.0,
             color=COLORS["primary"],
@@ -136,7 +139,6 @@ class TimerScreen(ft.Column):
             visible=False,
         )
 
-        # Dropdown скрыт — выбор задачи через диалог
         self.task_dropdown = ft.Dropdown(
             label="Задача",
             hint_text="Выбрать задачу",
@@ -144,16 +146,9 @@ class TimerScreen(ft.Column):
             border_color=COLORS["primary"],
             color=COLORS["text"],
             bgcolor=COLORS["surface"],
-            visible=False,  # НОВОЕ: скрыт, используется программно
+            visible=False,
         )
         self.task_dropdown.on_change = self.on_task_change
-
-        # НОВОЕ: кнопка выбора задачи
-        self.select_task_button = ft.TextButton(
-            "📋 Выбрать задачу",
-            style=ft.ButtonStyle(color=COLORS["primary"]),
-            on_click=self._show_task_picker_dialog,
-        )
 
         self.stats_text = ft.Text(
             "",
@@ -183,7 +178,6 @@ class TimerScreen(ft.Column):
         self.update_stats()
 
     def _get_progress_display(self) -> str:
-        """Возвращает 'Сессия 0 из 4' вместо '0/4'"""
         done = self.timer_service.completed_work_sessions
         total = self.timer_service.sessions_until_long_break
         return f"Сессия {done} из {total}"
@@ -222,7 +216,6 @@ class TimerScreen(ft.Column):
             self.stats_text.value = f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
 
     def _update_current_task_text(self):
-        """Обновляет текст 'Выполняется: ...'"""
         selected = self.task_dropdown.value
         if selected:
             for opt in self.task_dropdown.options:
@@ -236,7 +229,6 @@ class TimerScreen(ft.Column):
         self.current_task_text.italic = True
 
     def _show_task_picker_dialog(self, e):
-        """Показывает диалог выбора задачи"""
         with SessionLocal() as db:
             tasks = get_tasks(db)
 
@@ -268,9 +260,7 @@ class TimerScreen(ft.Column):
 
             return ft.Container(
                 content=ft.Row([
-                    ft.Container(
-                        width=8, height=8, border_radius=4, bgcolor=cat_color,
-                    ),
+                    ft.Container(width=8, height=8, border_radius=4, bgcolor=cat_color),
                     ft.Text(task.title, size=16, color=COLORS["text"], expand=True),
                 ], spacing=10),
                 padding=14,
@@ -365,7 +355,6 @@ class TimerScreen(ft.Column):
         self.skip_button.visible = is_rest and is_running
 
     def _show_snackbar(self, message: str, color: str = COLORS["primary"]):
-        """Показывает SnackBar уведомление"""
         self._page.snack_bar = ft.SnackBar(
             content=ft.Text(message, color=COLORS["bg"], size=14),
             bgcolor=color,
@@ -388,7 +377,6 @@ class TimerScreen(ft.Column):
 
         if self.timer_service.just_finished:
             self.timer_service.just_finished = False
-            # НОВОЕ: SnackBar при завершении
             session_name = self.timer_service.get_session_type_display()
             self._show_snackbar(f"✅ {session_name} завершена!", COLORS["success"])
             self._check_auto_start()

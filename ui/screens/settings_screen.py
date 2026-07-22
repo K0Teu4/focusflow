@@ -26,7 +26,7 @@ class SettingsScreen(ft.Column):
         def auto_save(e=None):
             self._save_current_values()
 
-        # === ДЛИТЕЛЬНОСТЬ: мин + сек ===
+        # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
         def make_time_row(label: str, min_val: int, sec_val: int):
             min_field = ft.TextField(
                 label="мин",
@@ -35,7 +35,7 @@ class SettingsScreen(ft.Column):
                 border_color=COLORS["primary"],
                 color=COLORS["text"],
                 bgcolor=COLORS["surface"],
-                width=80,
+                expand=True,
                 text_align=ft.TextAlign.CENTER,
                 on_change=auto_save,
             )
@@ -46,22 +46,25 @@ class SettingsScreen(ft.Column):
                 border_color=COLORS["primary"],
                 color=COLORS["text"],
                 bgcolor=COLORS["surface"],
-                width=80,
+                expand=True,
                 text_align=ft.TextAlign.CENTER,
                 on_change=auto_save,
             )
             return (
-                min_field,
-                sec_field,
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text(label, size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
-                        ft.Row([min_field, sec_field], spacing=10),
-                    ], spacing=6),
-                    padding=ft.padding.Padding(0, 4, 0, 4),
-                ),
+                min_field, sec_field,
+                ft.Column([
+                    ft.Text(label, size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
+                    ft.Row([min_field, sec_field], spacing=10),
+                ], spacing=6),
             )
 
+        def make_labeled_field(label: str, field_widget):
+            return ft.Column([
+                ft.Text(label, size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
+                field_widget,
+            ], spacing=6)
+
+        # === ДЛИТЕЛЬНОСТЬ ===
         self.work_min_field, self.work_sec_field, work_row = make_time_row(
             "Работа",
             int(settings.get("work_min", 25)),
@@ -79,15 +82,15 @@ class SettingsScreen(ft.Column):
         )
 
         self.sessions_until_long_break_field = ft.TextField(
-            label="Сессий до длинного перерыва",
             value=str(settings.get("sessions_until_long_break", 4)),
             keyboard_type=ft.KeyboardType.NUMBER,
             border_color=COLORS["primary"],
             color=COLORS["text"],
             bgcolor=COLORS["surface"],
-            width=200,
+            text_align=ft.TextAlign.CENTER,
             on_change=auto_save,
         )
+        sessions_row = make_labeled_field("Сессий до длинного перерыва", self.sessions_until_long_break_field)
 
         # === ПОВЕДЕНИЕ ===
         self.sound_checkbox = ft.Switch(
@@ -99,7 +102,6 @@ class SettingsScreen(ft.Column):
             label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
         )
 
-        # НОВОЕ: кнопка выбора звука (открывает диалог)
         current_sound = settings.get("sound_type", "bell")
         current_sound_name = SOUNDS.get(current_sound, SOUNDS["bell"])["name"]
         self.sound_button = ft.ElevatedButton(
@@ -111,6 +113,7 @@ class SettingsScreen(ft.Column):
             width=280,
             height=48,
         )
+        sound_row = make_labeled_field("Звук уведомления", self.sound_button)
 
         self.auto_start_checkbox = ft.Switch(
             label="Автостарт следующей сессии",
@@ -122,21 +125,15 @@ class SettingsScreen(ft.Column):
         )
 
         self.auto_start_delay_field = ft.TextField(
-            label="Задержка автостарта (сек)",
             value=str(settings.get("auto_start_delay", 3)),
             keyboard_type=ft.KeyboardType.NUMBER,
             border_color=COLORS["primary"],
             color=COLORS["text"],
             bgcolor=COLORS["surface"],
-            width=200,
+            text_align=ft.TextAlign.CENTER,
             on_change=auto_save,
         )
-
-        self.status_message = ft.Text(
-            "✓ Автосохранение",
-            size=13,
-            color=COLORS["success"],
-        )
+        delay_row = make_labeled_field("Задержка автостарта (сек)", self.auto_start_delay_field)
 
         # === PREMIUM СТАТУС ===
         primary_border = ft.BorderSide(1.5, COLORS["primary"])
@@ -192,44 +189,51 @@ class SettingsScreen(ft.Column):
         # === СБОРКА UI ===
         self.controls = [
             ft.Container(
-                content=ft.Text("Настройки", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
-                padding=ft.padding.Padding(20, 20, 20, 0),
-                alignment=ft.Alignment(0, 0),
+                content=ft.Column([
+                    ft.Text("Настройки", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                    ft.Container(height=6),
+                    ft.Row([
+                        ft.Icon(ft.Icons.SAVE_OUTLINED, size=16, color=COLORS["text_secondary"]),
+                        ft.Text("Все изменения сохраняются автоматически", size=13, color=COLORS["text_secondary"]),
+                    ], spacing=6),
+                ], spacing=0),
+                padding=ft.padding.Padding(20, 20, 20, 10),
             ),
             self.premium_status,
-            # Длительность
             ft.Container(
                 content=ft.Column([
                     ft.Text("Длительность", size=18, color=COLORS["text"]),
                     ft.Container(height=8),
                     work_row,
+                    ft.Container(height=4),
                     break_row,
+                    ft.Container(height=4),
                     long_break_row,
-                    ft.Container(height=8),
-                    self.sessions_until_long_break_field,
+                    ft.Container(height=12),
+                    sessions_row,
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Поведение
             ft.Container(
                 content=ft.Column([
                     ft.Text("Поведение", size=18, color=COLORS["text"]),
                     ft.Container(height=8),
                     self.sound_checkbox,
-                    self.sound_button,
                     ft.Container(height=8),
+                    sound_row,
+                    ft.Container(height=12),
                     self.auto_start_checkbox,
-                    self.auto_start_delay_field,
+                    ft.Container(height=8),
+                    delay_row,
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Premium функции
             ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -238,21 +242,23 @@ class SettingsScreen(ft.Column):
                     ], spacing=8),
                     ft.Container(height=8),
                     self._create_locked_feature(ft.Icons.PALETTE, "Кастомные темы"),
-                    self._create_locked_feature(ft.Icons.BAR_CHART, "Расширенная статистика"),
                 ], spacing=8),
                 padding=20,
                 bgcolor=COLORS["surface"],
                 border_radius=10,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
-            # Статус
-            ft.Container(
-                content=self.status_message,
-                padding=20,
-                alignment=ft.Alignment(0, 0),
-            ),
             ft.Container(height=40),
         ]
+
+    def refresh_data(self):
+        """Перечитывает Premium статус и настройки из БД, пересоздаёт UI"""
+        # Сохраняем ссылки на callbacks
+        page = self._page
+        on_settings_changed = self.on_settings_changed
+        on_open_premium = self.on_open_premium
+        # Переинициализируем с актуальными данными
+        self.__init__(page, on_settings_changed, on_open_premium)
 
     def _create_pro_badge(self):
         return ft.Container(
@@ -277,7 +283,6 @@ class SettingsScreen(ft.Column):
             ink=True,
         )
 
-    # === НОВОЕ: диалог выбора звука ===
     def _open_sound_dialog(self, e):
         current = self._get_current_sound_type()
 
@@ -358,11 +363,8 @@ class SettingsScreen(ft.Column):
             settings = get_settings(db)
             settings["sound_type"] = sound_id
             update_settings(db, settings)
-        # Обновляем текст кнопки
         name = SOUNDS.get(sound_id, SOUNDS["bell"])["name"]
         self.sound_button.text = f"🎵 {name}"
-        self.status_message.value = "✓ Сохранено"
-        self.status_message.color = COLORS["success"]
         self._page.update()
         if self.on_settings_changed:
             self.on_settings_changed(settings)
@@ -405,31 +407,15 @@ class SettingsScreen(ft.Column):
             sessions = int(self.sessions_until_long_break_field.value or 0)
             delay = int(self.auto_start_delay_field.value or 0)
 
-            # Валидация: общее время каждой сессии > 0
             if work_min * 60 + work_sec <= 0:
-                self.status_message.value = "⚠ Работа: время > 0"
-                self.status_message.color = COLORS["error"]
-                self._page.update()
                 return
             if break_min * 60 + break_sec <= 0:
-                self.status_message.value = "⚠ Отдых: время > 0"
-                self.status_message.color = COLORS["error"]
-                self._page.update()
                 return
             if long_break_min * 60 + long_break_sec <= 0:
-                self.status_message.value = "⚠ Длинный: время > 0"
-                self.status_message.color = COLORS["error"]
-                self._page.update()
                 return
             if sessions <= 0 or delay < 1:
-                self.status_message.value = "⚠ Проверьте значения"
-                self.status_message.color = COLORS["error"]
-                self._page.update()
                 return
             if work_sec >= 60 or break_sec >= 60 or long_break_sec >= 60:
-                self.status_message.value = "⚠ Секунды должны быть < 60"
-                self.status_message.color = COLORS["error"]
-                self._page.update()
                 return
 
             settings = {
@@ -450,14 +436,8 @@ class SettingsScreen(ft.Column):
             with SessionLocal() as db:
                 update_settings(db, settings)
 
-            self.status_message.value = "✓ Сохранено"
-            self.status_message.color = COLORS["success"]
-            self._page.update()
-
             if self.on_settings_changed:
                 self.on_settings_changed(settings)
 
         except ValueError:
-            self.status_message.value = "⚠ Некорректные числа"
-            self.status_message.color = COLORS["error"]
-            self._page.update()
+            pass

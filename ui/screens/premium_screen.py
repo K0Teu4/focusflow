@@ -15,18 +15,22 @@ class PremiumScreen(ft.Column):
         )
         self._page = page
         self.on_premium_changed = on_premium_changed
+        self.refresh_data()
 
+    def refresh_data(self):
+        """Перечитывает Premium статус из БД"""
         with SessionLocal() as db:
             user_state = get_user_state(db)
             self.is_premium = user_state.is_premium
             self.premium_expires = user_state.premium_expires_at
 
         self.controls = self._build_content()
+        if hasattr(self, '_page'):
+            self._page.update()
 
     def _build_content(self):
         controls = []
 
-        # НОВОЕ: Карточка статуса Premium
         if self.is_premium:
             expires_text = (
                 f"до {self.premium_expires.strftime('%d.%m.%Y')}"
@@ -57,14 +61,13 @@ class PremiumScreen(ft.Column):
                 )
             )
 
-        # Список преимуществ
+        # ИСПРАВЛЕНО: убран Telegram-бот
         features = [
             ("📊", "История и графики", "Статистика за всё время"),
             ("📤", "Экспорт данных", "Сохранение в CSV"),
             ("🎵", "Расширенные звуки", "3+ звука на выбор"),
             ("🎨", "Кастомные темы", "Персонализация интерфейса"),
             ("☁️", "Облако", "Синхронизация между устройствами"),
-            ("🤖", "Telegram-бот", "Дайджест в Telegram"),
         ]
 
         features_list = ft.Column(spacing=8, margin=ft.Margin(20, 0, 20, 20))
@@ -86,9 +89,7 @@ class PremiumScreen(ft.Column):
             )
         controls.append(features_list)
 
-        # Тарифы
         if not self.is_premium:
-            # НОВОЕ: бейдж "Выгодно!"
             monthly = ft.Container(
                 content=ft.Column([
                     ft.Text("1 месяц", size=14, color=COLORS["text_secondary"]),
@@ -128,7 +129,6 @@ class PremiumScreen(ft.Column):
                 ft.Row([monthly, yearly], alignment=ft.MainAxisAlignment.CENTER, spacing=20)
             )
 
-            # НОВОЕ: кнопка Купить на всю ширину
             controls.append(
                 ft.Container(
                     content=ft.ElevatedButton(
@@ -144,7 +144,6 @@ class PremiumScreen(ft.Column):
                 )
             )
 
-            # НОВОЕ: Восстановить — текстовая ссылка
             controls.append(
                 ft.TextButton(
                     "Восстановить покупку",
@@ -171,6 +170,8 @@ class PremiumScreen(ft.Column):
             dialog.open = False
             self._page.update()
 
+            # НОВОЕ: обновляем оба экрана после покупки
+            self.refresh_data()
             if self.on_premium_changed:
                 self.on_premium_changed(True)
 

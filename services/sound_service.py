@@ -4,7 +4,6 @@ import wave
 from pathlib import Path
 from typing import Optional
 
-# Описание звуков: id -> {name, file, premium}
 SOUNDS = {
     "bell": {
         "name": "🔔 Колокольчик",
@@ -26,11 +25,7 @@ SOUNDS = {
         "file": "soft.wav",
         "premium": True,
     },
-    "none": {
-        "name": "🔇 Без звука",
-        "file": None,
-        "premium": False,
-    },
+    # "none" убран — беззвучный режим теперь через Switch "Звук при завершении"
 }
 
 
@@ -39,11 +34,10 @@ class SoundService:
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
 
     def play(self, sound_id: Optional[str] = None):
-        """Воспроизводит звук по id с обработкой ошибок формата."""
-        if sound_id == "none":
-            return
+        if sound_id is None or sound_id not in SOUNDS:
+            sound_id = "bell"
 
-        sound_info = SOUNDS.get(sound_id or "bell", SOUNDS["bell"])
+        sound_info = SOUNDS.get(sound_id, SOUNDS["bell"])
         file_name = sound_info.get("file")
 
         if not file_name:
@@ -54,15 +48,12 @@ class SoundService:
             self._fallback()
             return
 
-        # Проверяем, что файл — настоящий PCM WAV
         if not self._is_valid_wav(sound_path):
             print(f"⚠ {file_name}: несовместимый формат, нужен PCM WAV")
             self._fallback()
             return
 
-        # Попытка воспроизвести (без fallback на системный)
         try:
-            # SND_NODEFAULT — не использовать системный звук при ошибке
             winsound.PlaySound(
                 str(sound_path),
                 winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
@@ -72,7 +63,6 @@ class SoundService:
             self._fallback()
 
     def _fallback(self):
-        """Запасной вариант — bell.wav или системный звук."""
         bell = self.sounds_dir / "bell.wav"
         if bell.exists() and self._is_valid_wav(bell):
             try:
@@ -83,20 +73,16 @@ class SoundService:
                 return
             except Exception:
                 pass
-        # Последний вариант
         winsound.MessageBeep(winsound.MB_OK)
 
     @staticmethod
     def _is_valid_wav(path: Path) -> bool:
-        """Проверяет, что файл — валидный PCM WAV (поддерживается winsound)."""
         try:
             with wave.open(str(path), "rb") as w:
-                # winsound требует: PCM (comptype == 'NONE'), 1 или 2 канала
                 if w.getcomptype() != "NONE":
                     return False
                 if w.getnchannels() not in (1, 2):
                     return False
-                # Поддерживаются 8 или 16 бит
                 if w.getsampwidth() not in (1, 2):
                     return False
                 return True
@@ -104,7 +90,6 @@ class SoundService:
             return False
 
     def play_bell(self):
-        """Для обратной совместимости."""
         self.play("bell")
 
     def get_sound_file_path(self, sound_id: str) -> Optional[Path]:
@@ -115,7 +100,6 @@ class SoundService:
         return self.sounds_dir / file_name
 
     def diagnose_sound(self, sound_id: str) -> dict:
-        """Возвращает диагностику звукового файла."""
         sound_info = SOUNDS.get(sound_id, SOUNDS["bell"])
         file_name = sound_info.get("file")
         result = {
