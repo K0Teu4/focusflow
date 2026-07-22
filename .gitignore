@@ -37,6 +37,10 @@ desktop.ini
 # Тестовые файлы и отчёты
 test_*.py
 focusflow_audit_*.txt
+focusflow_full_audit_*.txt
+
+# pytest
+.pytest_cache/
 
 # Аудиофайлы слишком большие для GitHub (лимит 100MB)
 # Храним только структуру папки

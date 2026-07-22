@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from db.models import Base, Task, Session as PomodoroSession, UserState
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 DB_PATH = Path(__file__).parent / "focusflow.db"
 
@@ -110,3 +110,98 @@ def update_settings(db: Session, settings: dict):
     db.commit()
 
 init_db()
+
+# === СТАТИСТИКА ДЛЯ PREMIUM ===
+
+def get_total_stats(db: Session) -> dict:
+    """Общая статистика за всё время"""
+    sessions = db.query(PomodoroSession).filter(
+        PomodoroSession.is_completed == True
+    ).all()
+    
+    work_sessions = [s for s in sessions if s.type == 'work']
+    total_work_sec = sum(s.duration_sec for s in work_sessions)
+    
+    return {
+        'total_sessions': len(sessions),
+        'work_sessions': len(work_sessions),
+        'total_work_minutes': total_work_sec // 60,
+        'total_work_hours': round(total_work_sec / 3600, 1),
+    }
+
+
+def get_daily_activity(db: Session, days: int = 7) -> list:
+    """Возвращает список {date, work_sessions, work_minutes} за последние N дней"""
+    today = datetime.utcnow().date()
+    result = []
+    
+    for i in range(days - 1, -1, -1):
+        day = today - timedelta(days=i)
+        next_day = day + timedelta(days=1)
+        
+        sessions = db.query(PomodoroSession).filter(
+            PomodoroSession.started_at >= datetime.combine(day, datetime.min.time()),
+            PomodoroSession.started_at < datetime.combine(next_day, datetime.min.time()),
+            PomodoroSession.type == 'work',
+            PomodoroSession.is_completed == True,
+        ).all()
+        
+        work_minutes = sum(s.duration_sec for s in sessions) // 60
+        result.append({
+            'date': day,
+            'work_sessions': len(sessions),
+            'work_minutes': work_minutes,
+        })
+    
+    return result
+
+
+def get_current_streak(db: Session) -> int:
+    """Считает серию дней подряд с хотя бы одной завершённой work-сессией"""
+    today = datetime.utcnow().date()
+    streak = 0
+    
+    for i in range(365):  # максимум год назад
+        day = today - timedelta(days=i)
+        next_day = day + timedelta(days=1)
+        
+        count = db.query(func.count(PomodoroSession.id)).filter(
+            PomodoroSession.started_at >= datetime.combine(day, datetime.min.time()),
+            PomodoroSession.started_at < datetime.combine(next_day, datetime.min.time()),
+            PomodoroSession.type == 'work',
+            PomodoroSession.is_completed == True,
+        ).scalar() or 0
+        
+        if count > 0:
+            streak += 1
+        else:
+            # Прерываем только если это не сегодня (сегодня ещё может не быть сессий)
+            if i > 0:
+                break
+            # Сегодня сессий нет — смотрим вчера
+            continue
+    
+    return streak
+
+
+def get_recent_sessions(db: Session, limit: int = 20) -> list:
+    """Возвращает последние N завершённых сессий с названиями задач"""
+    sessions = db.query(PomodoroSession).filter(
+        PomodoroSession.is_completed == True
+    ).order_by(PomodoroSession.started_at.desc()).limit(limit).all()
+    
+    result = []
+    for s in sessions:
+        task_title = None
+        if s.task_id:
+            task = db.query(Task).filter(Task.id == s.task_id).first()
+            task_title = task.title if task else None
+        
+        result.append({
+            'type': s.type,
+            'duration_min': s.duration_sec // 60,
+            'started_at': s.started_at,
+            'task_title': task_title,
+        })
+    
+    return result

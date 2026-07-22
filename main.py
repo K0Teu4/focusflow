@@ -7,6 +7,7 @@ from ui.screens.settings_screen import SettingsScreen
 from ui.screens.premium_screen import PremiumScreen
 from ui.screens.stats_screen import StatsScreen
 
+
 def main(page: ft.Page):
     page.title = "FocusFlow"
     page.theme_mode = ft.ThemeMode.DARK
@@ -15,40 +16,51 @@ def main(page: ft.Page):
     page.window.width = 400
     page.window.height = 700
     page.window.resizable = False
-    
+
     page.appbar = ft.AppBar(
         title=ft.Text("FocusFlow", color=COLORS["primary"]),
         bgcolor=COLORS["surface"],
         center_title=True,
     )
-    
+
     timer_screen = TimerScreen(page)
-    
+
     def on_focus_task(task_id: int, category: str):
         page.navigation_bar.selected_index = 0
         screen_container.controls.clear()
         screen_container.controls.append(timer_screen)
         timer_screen.focus_on_task(task_id, category)
         page.update()
-    
+
     tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
-    
+
     def on_settings_changed(settings: dict):
         timer_screen.timer_service.reload_settings()
         timer_screen.refresh_data()
-    
-    def on_premium_changed(is_premium: bool):
-        # Перезагружаем экран статистики
-        nonlocal stats_screen
-        stats_screen = StatsScreen(page)
+
+    # НОВОЕ: определяем on_open_premium ДО её использования
+    def on_open_premium():
+        page.navigation_bar.selected_index = 4  # Вкладка Premium
+        screen_container.controls.clear()
+        screen_container.controls.append(premium_screen)
         page.update()
-    
-    settings_screen = SettingsScreen(page, on_settings_changed=on_settings_changed)
+
+    def on_premium_changed(is_premium: bool):
+        # Перезагружаем экран статистики с новым Premium статусом
+        nonlocal stats_screen
+        stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
+        page.update()
+
+    settings_screen = SettingsScreen(
+        page,
+        on_settings_changed=on_settings_changed,
+        on_open_premium=on_open_premium,  # передаём callback
+    )
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
-    stats_screen = StatsScreen(page)
-    
+    stats_screen = StatsScreen(page, on_open_premium=on_open_premium)  # передаём callback
+
     screen_container = ft.Column([timer_screen], expand=True)
-    
+
     def on_nav_change(e):
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
@@ -65,7 +77,7 @@ def main(page: ft.Page):
         elif index == 4:
             screen_container.controls.append(premium_screen)
         page.update()
-    
+
     page.navigation_bar = ft.NavigationBar(
         selected_index=0,
         on_change=on_nav_change,
@@ -94,8 +106,9 @@ def main(page: ft.Page):
             ),
         ],
     )
-    
+
     page.add(screen_container)
+
 
 if __name__ == "__main__":
     ft.run(main)
