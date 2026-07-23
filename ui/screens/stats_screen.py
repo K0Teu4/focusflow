@@ -1,7 +1,7 @@
 # ui/screens/stats_screen.py
 import flet as ft
 from pathlib import Path
-from ui.theme import COLORS
+from ui.theme import COLORS, SHADOWS
 from db.database import (
     SessionLocal, get_user_state, get_total_stats,
     get_daily_activity, get_current_streak, get_recent_sessions,
@@ -259,6 +259,15 @@ class StatsScreen(ft.Column):
             task = s['task_title'] or "Без задачи"
             time_str = s['started_at'].strftime('%d.%m %H:%M') if s['started_at'] else ''
 
+            # НОВОЕ: показываем секунды если они есть
+            duration_sec = s.get('duration_sec', 0)
+            duration_min = duration_sec // 60
+            duration_rem_sec = duration_sec % 60
+            if duration_rem_sec > 0:
+                duration_str = f"{duration_min} мин {duration_rem_sec} сек"
+            else:
+                duration_str = f"{duration_min} мин"
+
             items.append(
                 ft.Container(
                     content=ft.Row([
@@ -268,13 +277,14 @@ class StatsScreen(ft.Column):
                             ft.Text(task, size=12, color=COLORS["text_secondary"]),
                         ], spacing=2, expand=True),
                         ft.Column([
-                            ft.Text(f"{s['duration_min']} мин", size=14, color=color, weight=ft.FontWeight.BOLD),
+                            ft.Text(duration_str, size=14, color=color, weight=ft.FontWeight.BOLD),
                             ft.Text(time_str, size=11, color=COLORS["text_secondary"]),
                         ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
                     ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     padding=12,
                     bgcolor=COLORS["surface"],
-                    border_radius=10,
+                    border_radius=16,
+                    shadow=SHADOWS["card"],
                     margin=ft.Margin(0, 0, 0, 6),
                 )
             )

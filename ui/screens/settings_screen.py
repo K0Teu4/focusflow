@@ -6,7 +6,7 @@ from ui.theme import COLORS
 
 
 class SettingsScreen(ft.Column):
-    def __init__(self, page: ft.Page, on_settings_changed=None, on_open_premium=None):
+    def __init__(self, page: ft.Page, on_settings_changed=None, on_open_premium=None, on_theme_changed=None):
         super().__init__(
             spacing=15,
             expand=True,
@@ -15,6 +15,7 @@ class SettingsScreen(ft.Column):
         self._page = page
         self.on_settings_changed = on_settings_changed
         self.on_open_premium = on_open_premium
+        self.on_theme_changed = on_theme_changed
         self.sound_service = SoundService()
 
         with SessionLocal() as db:
@@ -26,7 +27,6 @@ class SettingsScreen(ft.Column):
         def auto_save(e=None):
             self._save_current_values()
 
-        # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
         def make_time_row(label: str, min_val: int, sec_val: int):
             min_field = ft.TextField(
                 label="мин",
@@ -135,6 +135,17 @@ class SettingsScreen(ft.Column):
         )
         delay_row = make_labeled_field("Задержка автостарта (сек)", self.auto_start_delay_field)
 
+        # === НОВОЕ: ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ ===
+        current_theme = settings.get("theme", "dark")
+        self.theme_switch = ft.Switch(
+            label="Тёмная тема",
+            value=(current_theme == "dark"),
+            active_color=COLORS["primary"],
+            inactive_thumb_color=COLORS["text_secondary"],
+            on_change=self._on_theme_change,
+            label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
+        )
+
         # === PREMIUM СТАТУС ===
         primary_border = ft.BorderSide(1.5, COLORS["primary"])
 
@@ -164,11 +175,7 @@ class SettingsScreen(ft.Column):
                         ft.Text("FocusFlow Premium", size=16, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
                     ], spacing=8),
                     ft.Container(height=8),
-                    ft.Text(
-                        "Графики, экспорт, 3+ звука и темы",
-                        size=13,
-                        color=COLORS["text_secondary"],
-                    ),
+                    ft.Text("Графики, экспорт, 3+ звука и темы", size=13, color=COLORS["text_secondary"]),
                     ft.Container(height=12),
                     ft.ElevatedButton(
                         "Открыть Premium",
@@ -200,6 +207,7 @@ class SettingsScreen(ft.Column):
                 padding=ft.padding.Padding(20, 20, 20, 10),
             ),
             self.premium_status,
+            # Длительность
             ft.Container(
                 content=ft.Column([
                     ft.Text("Длительность", size=18, color=COLORS["text"]),
@@ -217,6 +225,7 @@ class SettingsScreen(ft.Column):
                 border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
+            # Поведение
             ft.Container(
                 content=ft.Column([
                     ft.Text("Поведение", size=18, color=COLORS["text"]),
@@ -234,6 +243,19 @@ class SettingsScreen(ft.Column):
                 border_radius=16,
                 margin=ft.Margin(20, 0, 20, 0),
             ),
+            # НОВОЕ: Оформление
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("Оформление", size=18, color=COLORS["text"]),
+                    ft.Container(height=8),
+                    self.theme_switch,
+                ], spacing=8),
+                padding=20,
+                bgcolor=COLORS["surface"],
+                border_radius=16,
+                margin=ft.Margin(20, 0, 20, 0),
+            ),
+            # Premium функции
             ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -252,13 +274,21 @@ class SettingsScreen(ft.Column):
         ]
 
     def refresh_data(self):
-        """Перечитывает Premium статус и настройки из БД, пересоздаёт UI"""
-        # Сохраняем ссылки на callbacks
         page = self._page
         on_settings_changed = self.on_settings_changed
         on_open_premium = self.on_open_premium
-        # Переинициализируем с актуальными данными
-        self.__init__(page, on_settings_changed, on_open_premium)
+        on_theme_changed = self.on_theme_changed
+        self.__init__(page, on_settings_changed, on_open_premium, on_theme_changed)
+
+    def _on_theme_change(self, e):
+        """НОВОЕ: переключение темы"""
+        theme_name = "dark" if self.theme_switch.value else "light"
+        with SessionLocal() as db:
+            settings = get_settings(db)
+            settings["theme"] = theme_name
+            update_settings(db, settings)
+        if self.on_theme_changed:
+            self.on_theme_changed(theme_name)
 
     def _create_pro_badge(self):
         return ft.Container(
@@ -291,7 +321,6 @@ class SettingsScreen(ft.Column):
             is_premium_sound = info["premium"]
             is_locked = is_premium_sound and not self.is_premium
             is_selected = sound_id == current
-
             display_name = f"🔒 {name}" if is_locked else name
 
             def on_select(ev):
@@ -326,28 +355,19 @@ class SettingsScreen(ft.Column):
                 ]),
                 padding=12,
                 bgcolor=COLORS["primary"] + "30" if is_selected else COLORS["surface"],
-                border_radius=16,
+                border_radius=10,
                 margin=ft.Margin(0, 0, 0, 6),
                 on_click=on_select,
                 ink=True,
                 border=ft.BorderSide(1.5, COLORS["primary"]) if is_selected else None,
             )
 
-        sound_rows = []
-        for sound_id, info in SOUNDS.items():
-            sound_rows.append(make_sound_row(sound_id, info))
+        sound_rows = [make_sound_row(sid, info) for sid, info in SOUNDS.items()]
 
         sound_dialog = ft.AlertDialog(
             title=ft.Text("Выберите звук"),
-            content=ft.Column(
-                sound_rows,
-                spacing=0,
-                scroll=ft.ScrollMode.AUTO,
-                height=300,
-            ),
-            actions=[
-                ft.TextButton("Закрыть", on_click=lambda e: self._close_dialog(sound_dialog)),
-            ],
+            content=ft.Column(sound_rows, spacing=0, scroll=ft.ScrollMode.AUTO, height=300),
+            actions=[ft.TextButton("Закрыть", on_click=lambda e: self._close_dialog(sound_dialog))],
         )
         self._page.overlay.append(sound_dialog)
         sound_dialog.open = True
@@ -430,7 +450,7 @@ class SettingsScreen(ft.Column):
                 "auto_start": self.auto_start_checkbox.value,
                 "auto_start_delay": delay,
                 "sound_type": self._get_current_sound_type(),
-                "theme": "dark",
+                "theme": "dark" if self.theme_switch.value else "light",
             }
 
             with SessionLocal() as db:

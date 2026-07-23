@@ -19,7 +19,6 @@ class TimerScreen(ft.Column):
         self.selected_task_id = None
         self._auto_start_task = None
 
-        # Градиентный фон таймера
         self.timer_bg = ft.Container(
             width=240,
             height=240,
@@ -96,6 +95,7 @@ class TimerScreen(ft.Column):
             visible=False,
         )
 
+        # НОВОЕ: Skip видна и во время работы
         self.skip_button = ft.ElevatedButton(
             "Пропустить",
             bgcolor=COLORS["skip"],
@@ -307,10 +307,8 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def _apply_mode_colors(self):
-        """Обновляет цвета и градиент в зависимости от режима"""
         mode = self.timer_service.get_mode_key()
-        
-        # ИСПРАВЛЕНО: gradient определена во всех ветках
+
         if mode == "work":
             ring_color = COLORS["work"]
             gradient = GRADIENTS["work"]
@@ -355,9 +353,9 @@ class TimerScreen(ft.Column):
             self.progress_ring.value = 0.0
 
     def _update_buttons(self):
-        is_rest = not self.timer_service.is_work_session
+        # НОВОЕ: Skip видна во время ЛЮБОЙ сессии (и работы, и отдыха)
         is_running = self.timer_service.is_running
-        self.skip_button.visible = is_rest and is_running
+        self.skip_button.visible = is_running
 
     def _show_snackbar(self, message: str, color: str = COLORS["primary"]):
         self._page.snack_bar = ft.SnackBar(
@@ -518,16 +516,27 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def on_skip(self, e):
+        """Пропуск с сохранением частичного прогресса"""
         self._cancel_auto_start_countdown()
+
         async def do_skip():
             await self.timer_service.pause()
-            self.timer_service.toggle_session_type()
-            self.timer_service.current_sec = self.timer_service._get_current_target_sec()
+            # НОВОЕ: сохраняем частичную сессию
+            elapsed = self.timer_service.skip_and_save()
             self.update_timer_display()
             self.start_button.visible = True
             self.pause_button.visible = False
             self.skip_button.visible = False
+
+            # НОВОЕ: SnackBar с информацией о сохранённой сессии
+            if elapsed > 0:
+                duration_str = TimerService.format_duration(elapsed)
+                self._show_snackbar(f"✅ Сохранено: {duration_str}", COLORS["success"])
+            else:
+                self._show_snackbar("⏭ Сессия пропущена", COLORS["skip"])
+
             self._page.update()
+
         asyncio.create_task(do_skip())
 
     def on_reset(self, e):

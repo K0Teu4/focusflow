@@ -39,15 +39,12 @@ class TimerService:
 
     @staticmethod
     def _calc_seconds(settings: dict, key: str, default_min: int) -> int:
-        """Вычисляет секунды с поддержкой старого формата (только минуты) и нового (мин+сек)."""
-        # Новый формат
         if f"{key}_min" in settings or f"{key}_sec" in settings:
             mins = int(settings.get(f"{key}_min", 0) or 0)
             secs = int(settings.get(f"{key}_sec", 0) or 0)
             total = mins * 60 + secs
             if total > 0:
                 return total
-        # Старый формат (только минуты)
         legacy_min = settings.get(f"{key}_min")
         if legacy_min is not None:
             return int(legacy_min) * 60
@@ -74,6 +71,10 @@ class TimerService:
             return self.long_break_sec
         else:
             return self.break_sec
+
+    def get_elapsed_sec(self) -> int:
+        """НОВОЕ: сколько секунд прошло с начала текущей сессии"""
+        return max(0, self._get_current_target_sec() - self.current_sec)
 
     async def start(self, callback: Callable, task_id: Optional[int] = None, sound_enabled: bool = True):
         try:
@@ -121,6 +122,32 @@ class TimerService:
             self.is_work_session = True
             self.is_long_break = False
         self.current_sec = self._get_current_target_sec()
+
+    def skip_and_save(self) -> int:
+        """
+        НОВОЕ: Пропускает сессию, сохраняя частичный прогресс.
+        Возвращает количество сохранённых секунд.
+        """
+        elapsed = self.get_elapsed_sec()
+
+        # Сохраняем только если прошло хотя бы 1 секунда
+        if elapsed > 0:
+            self._save_session_with_duration(elapsed)
+
+        # Переключаем тип (счётчик увеличивается для работы)
+        self.toggle_session_type()
+        return elapsed
+
+    def _save_session_with_duration(self, duration: int):
+        """Сохраняет сессию с указанной длительностью"""
+        if self.is_work_session:
+            session_type = 'work'
+        elif self.is_long_break:
+            session_type = 'long_break'
+        else:
+            session_type = 'short_break'
+        with SessionLocal() as db:
+            create_session(db, self.task_id, session_type, duration, True)
 
     def set_session_mode(self, is_work: bool):
         if not self.is_running:
@@ -183,3 +210,12 @@ class TimerService:
         minutes = total_sec // 60
         seconds = total_sec % 60
         return f"{minutes:02d}:{seconds:02d}"
+
+    @staticmethod
+    def format_duration(total_sec: int) -> str:
+        """НОВОЕ: форматирует длительность с секундами"""
+        minutes = total_sec // 60
+        seconds = total_sec % 60
+        if seconds > 0:
+            return f"{minutes} мин {seconds} сек"
+        return f"{minutes} мин"

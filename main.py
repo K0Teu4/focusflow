@@ -1,21 +1,29 @@
 # main.py
 import flet as ft
-from ui.theme import get_theme, COLORS
+from ui.theme import get_theme, set_theme, get_flet_theme_mode, COLORS
 from ui.screens.timer_screen import TimerScreen
 from ui.screens.tasks_screen import TasksScreen
 from ui.screens.settings_screen import SettingsScreen
 from ui.screens.premium_screen import PremiumScreen
 from ui.screens.stats_screen import StatsScreen
+from db.database import SessionLocal, get_settings
 
 
 def main(page: ft.Page):
     page.title = "FocusFlow"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.theme = get_theme()
-    page.bgcolor = COLORS["bg"]
     page.window.width = 400
     page.window.height = 700
     page.window.resizable = False
+
+    # НОВОЕ: применяем тему из настроек при запуске
+    with SessionLocal() as db:
+        settings = get_settings(db)
+        initial_theme = settings.get("theme", "dark")
+
+    set_theme(initial_theme)
+    page.theme_mode = get_flet_theme_mode(initial_theme)
+    page.theme = get_theme()
+    page.bgcolor = COLORS["bg"]
 
     page.appbar = ft.AppBar(
         title=ft.Text("FocusFlow", color=COLORS["primary"]),
@@ -41,21 +49,54 @@ def main(page: ft.Page):
     def on_open_premium():
         page.navigation_bar.selected_index = 4
         screen_container.controls.clear()
-        premium_screen.refresh_data()  # НОВОЕ: обновляем перед показом
+        premium_screen.refresh_data()
         screen_container.controls.append(premium_screen)
         page.update()
 
     def on_premium_changed(is_premium: bool):
-        # НОВОЕ: обновляем оба экрана после покупки
         stats_screen.refresh_data()
         premium_screen.refresh_data()
         settings_screen.refresh_data()
+        page.update()
+
+    # НОВОЕ: callback для смены темы
+    def on_theme_changed(theme_name: str):
+        nonlocal timer_screen, tasks_screen, settings_screen, premium_screen, stats_screen
+
+        # Применяем тему
+        set_theme(theme_name)
+        page.theme_mode = get_flet_theme_mode(theme_name)
+        page.theme = get_theme()
+        page.bgcolor = COLORS["bg"]
+        page.appbar.bgcolor = COLORS["surface"]
+        page.appbar.title.color = COLORS["primary"]
+        page.navigation_bar.bgcolor = COLORS["surface"]
+        page.navigation_bar.indicator_color = COLORS["primary"]
+
+        # Пересоздаём все экраны с новыми цветами
+        timer_screen = TimerScreen(page)
+        tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
+        settings_screen = SettingsScreen(
+            page,
+            on_settings_changed=on_settings_changed,
+            on_open_premium=on_open_premium,
+            on_theme_changed=on_theme_changed,
+        )
+        premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
+        stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
+
+        # Показываем текущую вкладку
+        screen_container.controls.clear()
+        index = page.navigation_bar.selected_index
+        screens = [timer_screen, tasks_screen, stats_screen, settings_screen, premium_screen]
+        screen_container.controls.append(screens[index])
         page.update()
 
     settings_screen = SettingsScreen(
         page,
         on_settings_changed=on_settings_changed,
         on_open_premium=on_open_premium,
+        on_theme_changed=on_theme_changed,
     )
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
     stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
@@ -72,13 +113,13 @@ def main(page: ft.Page):
             tasks_screen.refresh_data()
             screen_container.controls.append(tasks_screen)
         elif index == 2:
-            stats_screen.refresh_data()  # НОВОЕ: обновляем статистику
+            stats_screen.refresh_data()
             screen_container.controls.append(stats_screen)
         elif index == 3:
-            settings_screen.refresh_data()  # НОВОЕ
+            settings_screen.refresh_data()
             screen_container.controls.append(settings_screen)
         elif index == 4:
-            premium_screen.refresh_data()  # НОВОЕ
+            premium_screen.refresh_data()
             screen_container.controls.append(premium_screen)
         page.update()
 
