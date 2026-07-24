@@ -1,14 +1,24 @@
 # services/sound_service.py
+import asyncio
 import wave
 from pathlib import Path
 from typing import Optional
-import flet as ft
 
+# Desktop: winsound
 try:
     import winsound
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
+
+# Mobile: flet-audio
+try:
+    import flet_audio as fta
+    HAS_FLET_AUDIO = True
+except ImportError:
+    HAS_FLET_AUDIO = False
+
+import flet as ft
 
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
@@ -22,49 +32,40 @@ class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
         self._page = None
-        self._use_audio = False      # True только на mobile
-        self._audios = {}            # sound_id -> ft.Audio
+        self._use_audio = False
+        self._audios = {}
 
     def bind_page(self, page: ft.Page):
-        """Привязка к page. На mobile создаёт ft.Audio для каждого звука."""
+        """Привязка к page. На mobile создаёт flet_audio.Audio для каждого звука."""
         self._page = page
         platform = str(getattr(page, "platform", "")).lower()
         is_mobile = ("android" in platform) or ("ios" in platform)
 
-        if is_mobile and hasattr(ft, "Audio"):
+        if is_mobile and HAS_FLET_AUDIO:
             self._use_audio = True
             for sid, info in SOUNDS.items():
                 file = info.get("file")
                 if not file:
                     continue
-                src = self._resolve_src(file)
+                # Относительный путь от assets_dir="assets"
+                src = f"sounds/{file}"
                 print(f"🔊 [bind] {sid} -> src={src}")
                 try:
-                    audio = ft.Audio(src=src, volume=1.0)
+                    audio = fta.Audio(
+                        src=src,
+                        volume=1.0,
+                        release_mode=fta.ReleaseMode.STOP,
+                    )
                     self._audios[sid] = audio
-                    page.overlay.append(audio)
+                    page.services.append(audio)
                 except Exception as ex:
                     print(f"⚠ Не удалось создать Audio для {sid}: {ex}")
             try:
                 page.update()
             except Exception:
                 pass
-
-    def _resolve_src(self, file: str) -> str:
-        """Ищет читаемый путь к wav. На mobile fallback на asset-путь."""
-        candidates = [
-            self.sounds_dir / file,
-            Path.cwd() / "assets" / "sounds" / file,
-            Path.home() / "assets" / "sounds" / file,
-        ]
-        for p in candidates:
-            try:
-                if p.exists():
-                    return str(p)
-            except Exception:
-                pass
-        # Bundled flutter asset (относительный путь)
-        return f"assets/sounds/{file}"
+        elif is_mobile and not HAS_FLET_AUDIO:
+            print("⚠ flet-audio не установлен — звук на mobile недоступен")
 
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
@@ -73,17 +74,12 @@ class SoundService:
         if not file:
             return
 
-        # Mobile: через ft.Audio
+        # Mobile: через flet_audio (асинхронно)
         if self._use_audio and self._page:
             audio = self._audios.get(sound_id)
             if audio:
                 try:
-                    audio.seek(0)
-                except Exception:
-                    pass
-                try:
-                    audio.play()
-                    self._page.update()
+                    asyncio.create_task(audio.play())
                 except Exception as ex:
                     print(f"⚠ Audio.play error: {ex}")
             return

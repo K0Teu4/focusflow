@@ -15,7 +15,7 @@ def main(page: ft.Page):
     page.window.height = 700
     page.window.resizable = False
 
-    # НОВОЕ: применяем тему из настроек при запуске
+    # Применяем тему из настроек при запуске
     with SessionLocal() as db:
         settings = get_settings(db)
         initial_theme = settings.get("theme", "dark")
@@ -59,21 +59,27 @@ def main(page: ft.Page):
         settings_screen.refresh_data()
         page.update()
 
-    # НОВОЕ: callback для смены темы
     def on_theme_changed(theme_name: str):
         nonlocal timer_screen, tasks_screen, settings_screen, premium_screen, stats_screen
 
-        # Применяем тему
         set_theme(theme_name)
         page.theme_mode = get_flet_theme_mode(theme_name)
         page.theme = get_theme()
         page.bgcolor = COLORS["bg"]
         page.appbar.bgcolor = COLORS["surface"]
         page.appbar.title.color = COLORS["primary"]
+
+        # Обновляем цвета NavigationBar
         page.navigation_bar.bgcolor = COLORS["surface"]
         page.navigation_bar.indicator_color = COLORS["primary"]
+        for dest in page.navigation_bar.destinations:
+            if hasattr(dest, 'icon') and isinstance(dest.icon, ft.Icon):
+                dest.icon.color = COLORS["text_secondary"]
+            if hasattr(dest, 'selected_icon') and isinstance(dest.selected_icon, ft.Icon):
+                dest.selected_icon.color = COLORS["bg"]
+        page.update()
 
-        # Пересоздаём все экраны с новыми цветами
+        # Пересоздаём все экраны
         timer_screen = TimerScreen(page)
         tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
         settings_screen = SettingsScreen(
@@ -85,7 +91,6 @@ def main(page: ft.Page):
         premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
         stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
 
-        # Показываем текущую вкладку
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
         screens = [timer_screen, tasks_screen, stats_screen, settings_screen, premium_screen]
@@ -123,17 +128,38 @@ def main(page: ft.Page):
             screen_container.controls.append(premium_screen)
         page.update()
 
+    # NavigationBar с явными цветами иконок
     page.navigation_bar = ft.NavigationBar(
         selected_index=0,
         on_change=on_nav_change,
         bgcolor=COLORS["surface"],
         indicator_color=COLORS["primary"],
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.TIMER, label="Таймер"),
-            ft.NavigationBarDestination(icon=ft.Icons.CHECKLIST, label="Задачи"),
-            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART, label="Статистика"),
-            ft.NavigationBarDestination(icon=ft.Icons.SETTINGS, label="Настройки"),
-            ft.NavigationBarDestination(icon=ft.Icons.STAR, label="Premium"),
+            ft.NavigationBarDestination(
+                icon=ft.Icon(ft.Icons.TIMER, color=COLORS["text_secondary"]),
+                selected_icon=ft.Icon(ft.Icons.TIMER, color=COLORS["bg"]),
+                label="Таймер",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icon(ft.Icons.CHECKLIST, color=COLORS["text_secondary"]),
+                selected_icon=ft.Icon(ft.Icons.CHECKLIST, color=COLORS["bg"]),
+                label="Задачи",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icon(ft.Icons.BAR_CHART, color=COLORS["text_secondary"]),
+                selected_icon=ft.Icon(ft.Icons.BAR_CHART, color=COLORS["bg"]),
+                label="Статистика",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icon(ft.Icons.SETTINGS, color=COLORS["text_secondary"]),
+                selected_icon=ft.Icon(ft.Icons.SETTINGS, color=COLORS["bg"]),
+                label="Настройки",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icon(ft.Icons.STAR, color=COLORS["text_secondary"]),
+                selected_icon=ft.Icon(ft.Icons.STAR, color=COLORS["bg"]),
+                label="Premium",
+            ),
         ],
     )
 
@@ -141,4 +167,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(main, assets_dir="assets")
