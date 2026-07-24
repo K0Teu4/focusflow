@@ -17,6 +17,7 @@ class SettingsScreen(ft.Column):
         self.on_open_premium = on_open_premium
         self.on_theme_changed = on_theme_changed
         self.sound_service = SoundService()
+        self.sound_service.bind_page(page)
 
         with SessionLocal() as db:
             settings = get_settings(db)

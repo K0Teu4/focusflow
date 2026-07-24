@@ -50,3 +50,14 @@ assets/sounds/*.mp3
 
 # Логи
 *.log
+
+# Flet build artifacts
+build/
+*.apk
+*.aab
+*.ipa
+
+# Android
+.gradle/
+local.properties
+*.keystore

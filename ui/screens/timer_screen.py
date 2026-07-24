@@ -16,6 +16,7 @@ class TimerScreen(ft.Column):
         )
         self._page = page
         self.timer_service = TimerService()
+        self.timer_service._sound_service.bind_page(page)
         self.selected_task_id = None
         self._auto_start_task = None
 

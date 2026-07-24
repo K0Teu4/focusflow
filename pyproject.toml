@@ -1,0 +1,37 @@
+[project]
+name = "focusflow"
+version = "1.0.0"
+description = "Pomodoro timer with tasks and Premium subscription"
+requires-python = ">=3.10"
+dependencies = [
+    "flet==0.85.3",
+    "sqlalchemy>=2.0",
+]
+
+[tool.flet]
+org = "com.k0teu4"
+product = "FocusFlow"
+version = "1.0.0"
+build = 1
+
+[tool.flet.app]
+# Исключаем из упаковки в APK (уменьшает размер и убирает БД с ПК)
+exclude = [
+    ".git",
+    ".venv",
+    ".github",
+    "__pycache__",
+    "db/focusflow.db",
+    "test_full_app.py",
+    "test_csv_export.py",
+    "test_sounds.py",
+    "README.md",
+]
+
+[tool.flet.android]
+permissions = [
+    "android.permission.INTERNET",
+    "android.permission.VIBRATE",
+]
+min_sdk = 24
+target_sdk = 34
