@@ -5,7 +5,6 @@ description = "Pomodoro timer with tasks and Premium subscription"
 requires-python = ">=3.10"
 dependencies = [
     "flet==0.85.3",
-    "flet-audio==0.85.3",
     "sqlalchemy>=2.0",
 ]
 
@@ -28,12 +27,10 @@ exclude = [
     "README.md",
 ]
 
-# Splash screen (показывается при запуске)
 [tool.flet.splash]
 color = "#08033D"
 dark_color = "#08033D"
 
-# Boot screen (показывается во время загрузки Python runtime)
 [tool.flet.boot_screen.flet]
 theme_mode = "dark"
 bgcolor_dark = "#08033D"

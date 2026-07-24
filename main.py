@@ -15,7 +15,6 @@ def main(page: ft.Page):
     page.window.height = 700
     page.window.resizable = False
 
-    # Применяем тему из настроек при запуске
     with SessionLocal() as db:
         settings = get_settings(db)
         initial_theme = settings.get("theme", "dark")
@@ -68,8 +67,6 @@ def main(page: ft.Page):
         page.bgcolor = COLORS["bg"]
         page.appbar.bgcolor = COLORS["surface"]
         page.appbar.title.color = COLORS["primary"]
-
-        # Обновляем цвета NavigationBar
         page.navigation_bar.bgcolor = COLORS["surface"]
         page.navigation_bar.indicator_color = COLORS["primary"]
         for dest in page.navigation_bar.destinations:
@@ -79,7 +76,6 @@ def main(page: ft.Page):
                 dest.selected_icon.color = COLORS["bg"]
         page.update()
 
-        # Пересоздаём все экраны
         timer_screen = TimerScreen(page)
         tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
         settings_screen = SettingsScreen(
@@ -128,7 +124,6 @@ def main(page: ft.Page):
             screen_container.controls.append(premium_screen)
         page.update()
 
-    # NavigationBar с явными цветами иконок
     page.navigation_bar = ft.NavigationBar(
         selected_index=0,
         on_change=on_nav_change,

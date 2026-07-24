@@ -1,24 +1,13 @@
 # services/sound_service.py
-import asyncio
 import wave
 from pathlib import Path
 from typing import Optional
 
-# Desktop: winsound
 try:
     import winsound
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
-
-# Mobile: flet-audio
-try:
-    import flet_audio as fta
-    HAS_FLET_AUDIO = True
-except ImportError:
-    HAS_FLET_AUDIO = False
-
-import flet as ft
 
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
@@ -31,41 +20,10 @@ SOUNDS = {
 class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
-        self._page = None
-        self._use_audio = False
-        self._audios = {}
 
-    def bind_page(self, page: ft.Page):
-        """Привязка к page. На mobile создаёт flet_audio.Audio для каждого звука."""
-        self._page = page
-        platform = str(getattr(page, "platform", "")).lower()
-        is_mobile = ("android" in platform) or ("ios" in platform)
-
-        if is_mobile and HAS_FLET_AUDIO:
-            self._use_audio = True
-            for sid, info in SOUNDS.items():
-                file = info.get("file")
-                if not file:
-                    continue
-                # Относительный путь от assets_dir="assets"
-                src = f"sounds/{file}"
-                print(f"🔊 [bind] {sid} -> src={src}")
-                try:
-                    audio = fta.Audio(
-                        src=src,
-                        volume=1.0,
-                        release_mode=fta.ReleaseMode.STOP,
-                    )
-                    self._audios[sid] = audio
-                    page.services.append(audio)
-                except Exception as ex:
-                    print(f"⚠ Не удалось создать Audio для {sid}: {ex}")
-            try:
-                page.update()
-            except Exception:
-                pass
-        elif is_mobile and not HAS_FLET_AUDIO:
-            print("⚠ flet-audio не установлен — звук на mobile недоступен")
+    def bind_page(self, page):
+        """Заглушка: на mobile звук временно отключён (см. план сборки)."""
+        pass
 
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
@@ -74,17 +32,6 @@ class SoundService:
         if not file:
             return
 
-        # Mobile: через flet_audio (асинхронно)
-        if self._use_audio and self._page:
-            audio = self._audios.get(sound_id)
-            if audio:
-                try:
-                    asyncio.create_task(audio.play())
-                except Exception as ex:
-                    print(f"⚠ Audio.play error: {ex}")
-            return
-
-        # Desktop: через winsound
         if HAS_WINSOUND:
             sound_path = self.sounds_dir / file
             if sound_path.exists() and self._is_valid_wav(sound_path):
@@ -98,7 +45,8 @@ class SoundService:
                     pass
             self._fallback()
         else:
-            print(f"🔊 [no-backend] {file}")
+            # Mobile: звук будет добавлен через CI-сборку с flet-audio
+            print(f"🔊 [mobile-stub] {file}")
 
     def _fallback(self):
         if not HAS_WINSOUND:

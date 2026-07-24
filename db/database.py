@@ -1,15 +1,13 @@
 # db/database.py
 import os
-import sys
 from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from db.models import Base, Task, Session as PomodoroSession, UserState
 
 
 def _app_data_dir() -> Path:
-    """Writable папка для данных на всех платформах."""
     try:
         base = Path(os.environ.get("HOME") or str(Path.home()))
     except Exception:
@@ -17,13 +15,12 @@ def _app_data_dir() -> Path:
     d = base / ".focusflow"
     try:
         d.mkdir(parents=True, exist_ok=True)
-        # проверка записи
         test = d / ".write_test"
         test.write_text("ok")
         test.unlink()
         return d
     except Exception:
-        return Path(__file__).parent  # fallback
+        return Path(__file__).parent
 
 
 DB_PATH = _app_data_dir() / "focusflow.db"
@@ -159,8 +156,6 @@ def update_settings(db: Session, settings: dict):
     user_state.settings = settings
     db.commit()
 
-
-# === СТАТИСТИКА ===
 
 def get_total_stats(db: Session) -> dict:
     sessions = db.query(PomodoroSession).filter(PomodoroSession.is_completed == True).all()
