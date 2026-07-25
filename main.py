@@ -25,12 +25,7 @@ def main(page: ft.Page):
     page.theme_mode = get_flet_theme_mode(initial_theme)
     page.theme = get_theme()
     page.bgcolor = COLORS["bg"]
-
-    page.appbar = ft.AppBar(
-        title=ft.Text("FocusFlow", color=COLORS["primary"]),
-        bgcolor=COLORS["surface"],
-        center_title=True,
-    )
+    # AppBar убран намеренно — бренд-заголовок занимал место на каждом экране.
 
     timer_screen = TimerScreen(page)
 
@@ -67,8 +62,6 @@ def main(page: ft.Page):
         page.theme_mode = get_flet_theme_mode(theme_name)
         page.theme = get_theme()
         page.bgcolor = COLORS["bg"]
-        page.appbar.bgcolor = COLORS["surface"]
-        page.appbar.title.color = COLORS["primary"]
         page.navigation_bar.bgcolor = COLORS["surface"]
         page.navigation_bar.indicator_color = COLORS["primary"]
         for dest in page.navigation_bar.destinations:
@@ -104,7 +97,6 @@ def main(page: ft.Page):
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
     stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
 
-    # Навигация
     def on_nav_change(e):
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
@@ -159,13 +151,11 @@ def main(page: ft.Page):
         ],
     )
 
-    # Онбординг при первом запуске
     def on_onboarding_complete():
         with SessionLocal() as db:
             s = get_settings(db)
             s["onboarding_completed"] = True
             update_settings(db, s)
-        # Показываем навигацию и переходим на таймер
         page.navigation_bar.visible = True
         screen_container.controls.clear()
         screen_container.controls.append(timer_screen)
