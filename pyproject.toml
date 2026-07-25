@@ -27,20 +27,6 @@ exclude = [
     "README.md",
 ]
 
-[tool.flet.splash]
-color = "#08033D"
-dark_color = "#08033D"
-
-[tool.flet.boot_screen.flet]
-theme_mode = "dark"
-bgcolor_dark = "#08033D"
-spinner_color_dark = "#FECCE7"
-spinner_size = 40
-text_color_dark = "#FFFFFF"
-prepare_message = "Подготовка приложения…"
-startup_message = "Запуск…"
-fade_out_duration = 300
-
 [tool.flet.android]
 permissions = [
     "android.permission.INTERNET",

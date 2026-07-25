@@ -2,7 +2,9 @@
 import wave
 from pathlib import Path
 from typing import Optional
+import flet as ft
 
+# Desktop: winsound (работает на Windows)
 try:
     import winsound
     HAS_WINSOUND = True
@@ -20,10 +22,44 @@ SOUNDS = {
 class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
+        self._page = None
+        self._use_audio = False   # True только если на mobile удалось создать ft.Audio
+        self._audios = {}         # sound_id -> ft.Audio
 
-    def bind_page(self, page):
-        """Заглушка: на mobile звук временно отключён (см. план сборки)."""
-        pass
+    def bind_page(self, page: ft.Page):
+        """Привязка к page. На mobile пробуем встроенный ft.Audio (без новых нативных пакетов)."""
+        self._page = page
+        platform = str(getattr(page, "platform", "")).lower()
+        is_mobile = ("android" in platform) or ("ios" in platform)
+
+        # Desktop оставляем winsound — ft.Audio не создаём, сборку/работу не трогаем
+        if not is_mobile:
+            return
+
+        # Если в этой версии Flet нет ft.Audio — мягко отключаем звук на mobile
+        if not hasattr(ft, "Audio"):
+            print("⚠ ft.Audio недоступен в этой версии Flet — звук на mobile отключён")
+            return
+
+        self._use_audio = True
+        for sid, info in SOUNDS.items():
+            file = info.get("file")
+            if not file:
+                continue
+            # Путь относительно assets_dir="assets" (внутри assets/sounds/)
+            src = f"sounds/{file}"
+            try:
+                audio = ft.Audio(src=src, volume=1.0)
+                self._audios[sid] = audio
+                page.overlay.append(audio)
+            except Exception as ex:
+                # Любая несовместимость API — молча откат в заглушку, без краша
+                print(f"⚠ не удалось создать ft.Audio для {sid}: {ex}")
+                self._use_audio = False
+        try:
+            page.update()
+        except Exception:
+            pass
 
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
@@ -32,6 +68,18 @@ class SoundService:
         if not file:
             return
 
+        # Mobile: через встроенный ft.Audio
+        if self._use_audio and self._page:
+            audio = self._audios.get(sound_id)
+            if audio:
+                try:
+                    audio.play()
+                    self._page.update()
+                except Exception as ex:
+                    print(f"⚠ audio.play error: {ex}")
+            return
+
+        # Desktop: через winsound
         if HAS_WINSOUND:
             sound_path = self.sounds_dir / file
             if sound_path.exists() and self._is_valid_wav(sound_path):
@@ -45,8 +93,8 @@ class SoundService:
                     pass
             self._fallback()
         else:
-            # Mobile: звук будет добавлен через CI-сборку с flet-audio
-            print(f"🔊 [mobile-stub] {file}")
+            # Mobile без ft.Audio — тишина (звук добьём через CI, см. план Б)
+            print(f"🔊 [mobile-no-audio] {file}")
 
     def _fallback(self):
         if not HAS_WINSOUND:
