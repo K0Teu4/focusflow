@@ -4,9 +4,16 @@ import asyncio
 from services.timer_service import TimerService
 from db.database import SessionLocal, get_tasks, get_today_stats, get_settings, get_task_by_id
 from ui.theme import COLORS, GRADIENTS, SHADOWS
+from ui.toast import show_toast
 
 
 class TimerScreen(ft.Column):
+    """Главный экран с таймером Pomodoro.
+
+    Отвечает за отображение кругового прогресса, времени, типа сессии,
+    управления (старт/пауза/пропуск/сброс), выбора задачи и автостарта.
+    """
+
     def __init__(self, page: ft.Page):
         super().__init__(
             spacing=0,
@@ -16,10 +23,14 @@ class TimerScreen(ft.Column):
         )
         self._page = page
         self.timer_service = TimerService()
+        # Привязка звукового сервиса к page (на mobile — заглушка, на desktop — winsound)
         self.timer_service._sound_service.bind_page(page)
         self.selected_task_id = None
-        self._auto_start_task = None
+        self._auto_start_task = None  # handle задачи обратного отсчёта автостарта
 
+        # === КРУГОВОЙ ПРОГРЕСС-БАР ===
+        # Контейнер с градиентным фоном и тенью; внутри — ProgressRing.
+        # scale + animation нужны для пульсации при старте/завершении сессии.
         self.timer_bg = ft.Container(
             width=240,
             height=240,
@@ -27,6 +38,8 @@ class TimerScreen(ft.Column):
             gradient=GRADIENTS["work"],
             alignment=ft.Alignment(0, 0),
             shadow=SHADOWS["elevated"],
+            scale=1.0,
+            animate=ft.Animation(180, ft.AnimationCurve.EASE_OUT),
             content=ft.ProgressRing(
                 value=0.0,
                 width=210,
@@ -39,6 +52,8 @@ class TimerScreen(ft.Column):
         )
         self.progress_ring = self.timer_bg.content
 
+        # === ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ===
+        # Тип сессии: "Работа" / "Короткий перерыв" / "Длинный перерыв"
         self.session_type_text = ft.Text(
             self.timer_service.get_session_type_display(),
             size=22,
@@ -46,6 +61,7 @@ class TimerScreen(ft.Column):
             color=COLORS["text"],
         )
 
+        # Счётчик сессий до длинного перерыва: "Сессия 0 из 4"
         self.progress_text = ft.Text(
             self._get_progress_display(),
             size=16,
@@ -53,6 +69,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 8),
         )
 
+        # Основное табло времени MM:SS
         self.time_display = ft.Text(
             self.timer_service.get_display_time(),
             size=56,
@@ -62,6 +79,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 8),
         )
 
+        # Название текущей задачи или "Без задачи"
         self.current_task_text = ft.Text(
             "Без задачи",
             size=16,
@@ -70,6 +88,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 4),
         )
 
+        # Кнопка вызова диалога выбора задачи
         self.select_task_button = ft.TextButton(
             "📋 Выбрать задачу",
             style=ft.ButtonStyle(color=COLORS["primary"]),
@@ -77,6 +96,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 20),
         )
 
+        # === КНОПКИ УПРАВЛЕНИЯ ===
         self.start_button = ft.ElevatedButton(
             "Старт",
             bgcolor=COLORS["primary"],
@@ -96,7 +116,7 @@ class TimerScreen(ft.Column):
             visible=False,
         )
 
-        # НОВОЕ: Skip видна и во время работы
+        # Пропуск виден во время любой запущенной сессии (работа и отдых)
         self.skip_button = ft.ElevatedButton(
             "Пропустить",
             bgcolor=COLORS["skip"],
@@ -120,6 +140,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 12, 0, 0),
         )
 
+        # === АВТОСТАРТ СЛЕДУЮЩЕЙ СЕССИИ ===
         self.auto_start_bar = ft.ProgressBar(
             value=0.0,
             color=COLORS["primary"],
@@ -142,6 +163,7 @@ class TimerScreen(ft.Column):
             visible=False,
         )
 
+        # Скрытый Dropdown — хранит id выбранной задачи, управляется программно
         self.task_dropdown = ft.Dropdown(
             label="Задача",
             hint_text="Выбрать задачу",
@@ -153,6 +175,7 @@ class TimerScreen(ft.Column):
         )
         self.task_dropdown.on_change = self.on_task_change
 
+        # Статистика за сегодня внизу экрана
         self.stats_text = ft.Text(
             "",
             size=13,
@@ -160,6 +183,7 @@ class TimerScreen(ft.Column):
             margin=ft.Margin(0, 16, 0, 20),
         )
 
+        # === СБОРКА ЭКРАНА ===
         self.controls = [
             self.timer_bg,
             self.session_type_text,
@@ -168,7 +192,11 @@ class TimerScreen(ft.Column):
             self.current_task_text,
             self.select_task_button,
             self.task_dropdown,
-            ft.Row([self.start_button, self.pause_button], alignment=ft.MainAxisAlignment.CENTER, spacing=12),
+            ft.Row(
+                [self.start_button, self.pause_button],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=12,
+            ),
             self.skip_button,
             self.auto_start_text,
             self.auto_start_bar,
@@ -180,24 +208,48 @@ class TimerScreen(ft.Column):
         self.load_tasks()
         self.update_stats()
 
+    # ------------------------------------------------------------------ #
+    # ПУЛЬСАЦИЯ КРУГА                                                     #
+    # ------------------------------------------------------------------ #
+    def _pulse(self):
+        """Короткая пульсация круга при старте и завершении сессии."""
+        self.timer_bg.scale = 1.06
+        self._page.update()
+
+        async def back():
+            await asyncio.sleep(0.18)
+            self.timer_bg.scale = 1.0
+            self._page.update()
+
+        asyncio.create_task(back())
+
+    # ------------------------------------------------------------------ #
+    # ВСПОМОГАТЕЛЬНЫЕ ОТОБРАЖЕНИЯ                                         #
+    # ------------------------------------------------------------------ #
     def _get_progress_display(self) -> str:
+        """Возвращает строку счётчика вида 'Сессия 0 из 4'."""
         done = self.timer_service.completed_work_sessions
         total = self.timer_service.sessions_until_long_break
         return f"Сессия {done} из {total}"
 
     def _cancel_auto_start_countdown(self):
+        """Останавливает обратный отсчёт автостарта и прячет его UI."""
         if self._auto_start_task and not self._auto_start_task.done():
             self._auto_start_task.cancel()
         self.auto_start_text.visible = False
         self.auto_start_bar.visible = False
         self.cancel_auto_btn.visible = False
 
+    # ------------------------------------------------------------------ #
+    # ОБНОВЛЕНИЕ ДАННЫХ                                                   #
+    # ------------------------------------------------------------------ #
     def refresh_data(self):
+        """Перечитывает настройки/задачи/статистику и перерисовывает экран."""
         self.timer_service.reload_settings()
         self.load_tasks()
         self.update_stats()
         self._apply_mode_colors()
-        self.progress_ring.value = 0.0
+        self._update_progress()
         self.time_display.value = self.timer_service.get_display_time()
         self.session_type_text.value = self.timer_service.get_session_type_display()
         self.progress_text.value = self._get_progress_display()
@@ -205,6 +257,7 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def load_tasks(self):
+        """Загружает активные задачи в скрытый Dropdown."""
         with SessionLocal() as db:
             tasks = get_tasks(db)
             self.task_dropdown.options = [
@@ -214,11 +267,15 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def update_stats(self):
+        """Обновляет строку статистики за сегодня."""
         with SessionLocal() as db:
             stats = get_today_stats(db)
-            self.stats_text.value = f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
+            self.stats_text.value = (
+                f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
+            )
 
     def _update_current_task_text(self):
+        """Синхронизирует текст текущей задачи с выбранным значением Dropdown."""
         selected = self.task_dropdown.value
         if selected:
             for opt in self.task_dropdown.options:
@@ -231,7 +288,11 @@ class TimerScreen(ft.Column):
         self.current_task_text.color = COLORS["text_secondary"]
         self.current_task_text.italic = True
 
+    # ------------------------------------------------------------------ #
+    # ДИАЛОГ ВЫБОРА ЗАДАЧИ                                                #
+    # ------------------------------------------------------------------ #
     def _show_task_picker_dialog(self, e):
+        """Показывает диалог со списком задач для привязки к таймеру."""
         with SessionLocal() as db:
             tasks = get_tasks(db)
 
@@ -307,7 +368,11 @@ class TimerScreen(ft.Column):
         dialog.open = True
         self._page.update()
 
+    # ------------------------------------------------------------------ #
+    # ЦВЕТА РЕЖИМА                                                        #
+    # ------------------------------------------------------------------ #
     def _apply_mode_colors(self):
+        """Обновляет цвета кольца, градиент фона и табло под текущий режим."""
         mode = self.timer_service.get_mode_key()
 
         if mode == "work":
@@ -328,6 +393,7 @@ class TimerScreen(ft.Column):
         self.time_display.color = ring_color
         self.pause_button.bgcolor = pause_color
 
+        # Во время отдыха прячем выбор задачи и показываем следующую/отдых
         is_rest = not self.timer_service.is_work_session
         self.select_task_button.visible = not is_rest
         if is_rest:
@@ -346,7 +412,11 @@ class TimerScreen(ft.Column):
         else:
             self._update_current_task_text()
 
+    # ------------------------------------------------------------------ #
+    # ПРОГРЕСС И КНОПКИ                                                   #
+    # ------------------------------------------------------------------ #
     def _update_progress(self):
+        """Пересчитывает заполнение кольца по оставшемуся времени."""
         total = self.timer_service._get_current_target_sec()
         if total > 0:
             self.progress_ring.value = (total - self.timer_service.current_sec) / total
@@ -354,20 +424,24 @@ class TimerScreen(ft.Column):
             self.progress_ring.value = 0.0
 
     def _update_buttons(self):
-        # НОВОЕ: Skip видна во время ЛЮБОЙ сессии (и работы, и отдыха)
-        is_running = self.timer_service.is_running
-        self.skip_button.visible = is_running
+        """Пропуск виден, пока идёт любая сессия."""
+        self.skip_button.visible = self.timer_service.is_running
 
     def _show_snackbar(self, message: str, color: str = COLORS["primary"]):
-        self._page.snack_bar = ft.SnackBar(
-            content=ft.Text(message, color=COLORS["bg"], size=14),
-            bgcolor=color,
-            duration=3000,
-        )
-        self._page.snack_bar.open = True
-        self._page.update()
+        """Показывает плавающий тост (единый виджет из ui.toast)."""
+        if color == COLORS["success"]:
+            icon = ft.Icons.CHECK_CIRCLE
+        elif color == COLORS["skip"]:
+            icon = ft.Icons.HOURGLASS_TOP
+        else:
+            icon = ft.Icons.INFO_OUTLINE
+        show_toast(self._page, message, icon, color)
 
+    # ------------------------------------------------------------------ #
+    # ЦИКЛ ТАЙМЕРА                                                        #
+    # ------------------------------------------------------------------ #
     def update_timer_display(self):
+        """Колбэк таймера: вызывается каждую секунду и при смене сессии."""
         self.time_display.value = self.timer_service.get_display_time()
         self.session_type_text.value = self.timer_service.get_session_type_display()
         self.progress_text.value = self._get_progress_display()
@@ -377,10 +451,13 @@ class TimerScreen(ft.Column):
 
         with SessionLocal() as db:
             stats = get_today_stats(db)
-            self.stats_text.value = f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
+            self.stats_text.value = (
+                f"Сегодня: {stats['work_sessions']} 🍅 • {stats['total_work_minutes']} мин"
+            )
 
         if self.timer_service.just_finished:
             self.timer_service.just_finished = False
+            self._pulse()  # пульс при завершении сессии
             session_name = self.timer_service.get_session_type_display()
             self._show_snackbar(f"✅ {session_name} завершена!", COLORS["success"])
             self._check_auto_start()
@@ -388,6 +465,7 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def _check_auto_start(self):
+        """Если включён автостарт — запускает обратный отсчёт, иначе показывает Старт."""
         with SessionLocal() as db:
             settings = get_settings(db)
             if settings.get("auto_start", False):
@@ -398,6 +476,7 @@ class TimerScreen(ft.Column):
                 self.pause_button.visible = False
 
     def _start_countdown(self, delay: int):
+        """Запускает визуальный обратный отсчёт перед автостартом."""
         self._cancel_auto_start_countdown()
         self.start_button.visible = False
 
@@ -431,17 +510,23 @@ class TimerScreen(ft.Column):
         self._auto_start_task = asyncio.create_task(countdown())
 
     def on_cancel_auto_start(self, e):
+        """Отмена обратного отсчёта автостарта пользователем."""
         self._cancel_auto_start_countdown()
         self.start_button.visible = True
         self.pause_button.visible = False
         self._page.update()
 
+    # ------------------------------------------------------------------ #
+    # ВЫБОР ЗАДАЧИ И РЕЖИМА                                               #
+    # ------------------------------------------------------------------ #
     def on_task_change(self, e):
+        """Реакция на смену задачи в Dropdown."""
         self._update_session_label_from_dropdown()
         self._update_current_task_text()
         self._page.update()
 
     def _update_session_label_from_dropdown(self):
+        """Ставит режим работа/отдых по категории выбранной задачи."""
         selected_key = self.task_dropdown.value
         if selected_key:
             for opt in self.task_dropdown.options:
@@ -456,7 +541,11 @@ class TimerScreen(ft.Column):
         self.session_type_text.value = self.timer_service.get_session_type_display()
         self._apply_mode_colors()
 
+    # ------------------------------------------------------------------ #
+    # ФОКУС НА ЗАДАЧЕ ИЗ СПИСКА                                           #
+    # ------------------------------------------------------------------ #
     def focus_on_task(self, task_id: int, category: str):
+        """Запуск таймера по задаче из списка задач (с подтверждением, если идёт)."""
         if self.timer_service.is_running:
             def on_confirm(e):
                 dialog.open = False
@@ -484,6 +573,7 @@ class TimerScreen(ft.Column):
             self._do_focus_on_task(task_id, category)
 
     def _do_focus_on_task(self, task_id: int, category: str):
+        """Фактическая привязка задачи и старт таймера."""
         self._cancel_auto_start_countdown()
         self.load_tasks()
         self.task_dropdown.value = str(task_id)
@@ -496,19 +586,25 @@ class TimerScreen(ft.Column):
         self.on_start(None)
         self._page.update()
 
+    # ------------------------------------------------------------------ #
+    # УПРАВЛЕНИЕ: СТАРТ / ПАУЗА / ПРОПУСК / СБРОС                         #
+    # ------------------------------------------------------------------ #
     def on_start(self, e):
+        """Запуск таймера с пульсацией круга."""
         self._cancel_auto_start_countdown()
         task_id = int(self.task_dropdown.value) if self.task_dropdown.value else None
         self.start_button.visible = False
         self.pause_button.visible = True
         self._apply_mode_colors()
         self._update_buttons()
+        self._pulse()  # пульс при старте
         self._page.update()
-        asyncio.create_task(self.timer_service.start(
-            self.update_timer_display, task_id, sound_enabled=True,
-        ))
+        asyncio.create_task(
+            self.timer_service.start(self.update_timer_display, task_id, sound_enabled=True)
+        )
 
     def on_pause(self, e):
+        """Пауза таймера."""
         self._cancel_auto_start_countdown()
         asyncio.create_task(self.timer_service.pause())
         self.start_button.visible = True
@@ -517,19 +613,17 @@ class TimerScreen(ft.Column):
         self._page.update()
 
     def on_skip(self, e):
-        """Пропуск с сохранением частичного прогресса"""
+        """Пропуск сессии с сохранением частичного прогресса."""
         self._cancel_auto_start_countdown()
 
         async def do_skip():
             await self.timer_service.pause()
-            # НОВОЕ: сохраняем частичную сессию
             elapsed = self.timer_service.skip_and_save()
             self.update_timer_display()
             self.start_button.visible = True
             self.pause_button.visible = False
             self.skip_button.visible = False
 
-            # НОВОЕ: SnackBar с информацией о сохранённой сессии
             if elapsed > 0:
                 duration_str = TimerService.format_duration(elapsed)
                 self._show_snackbar(f"✅ Сохранено: {duration_str}", COLORS["success"])
@@ -541,6 +635,7 @@ class TimerScreen(ft.Column):
         asyncio.create_task(do_skip())
 
     def on_reset(self, e):
+        """Полный сброс таймера в начальное состояние."""
         self._cancel_auto_start_countdown()
         asyncio.create_task(self.timer_service.reset())
         self.start_button.visible = True
@@ -550,6 +645,10 @@ class TimerScreen(ft.Column):
         self.update_timer_display()
         self.update_stats()
 
+    # ------------------------------------------------------------------ #
+    # УТИЛИТЫ                                                             #
+    # ------------------------------------------------------------------ #
     def _close_dialog(self, dialog):
+        """Закрывает переданный AlertDialog."""
         dialog.open = False
         self._page.update()

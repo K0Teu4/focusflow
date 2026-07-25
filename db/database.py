@@ -79,13 +79,15 @@ def get_task_by_id(db: Session, task_id: int) -> Task:
     return db.query(Task).filter(Task.id == task_id).first()
 
 
-def update_task(db: Session, task_id: int, title: str = None, category: str = None):
+def update_task(db: Session, task_id: int, title: str = None, category: str = None, is_done: bool = None):
     task = db.query(Task).filter(Task.id == task_id).first()
     if task:
         if title is not None:
             task.title = title
         if category is not None:
             task.category = category
+        if is_done is not None:
+            task.is_done = is_done
         db.commit()
         db.refresh(task)
     return task
