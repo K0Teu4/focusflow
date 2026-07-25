@@ -147,6 +147,7 @@ def get_settings(db: Session) -> dict:
         "sessions_until_long_break": 4,
         "sound_enabled": True, "auto_start": False, "auto_start_delay": 3,
         "sound_type": "bell", "theme": "dark",
+        "onboarding_completed": False,
     }
     return {**defaults, **settings}
 

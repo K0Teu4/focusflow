@@ -6,7 +6,8 @@ from ui.screens.tasks_screen import TasksScreen
 from ui.screens.settings_screen import SettingsScreen
 from ui.screens.premium_screen import PremiumScreen
 from ui.screens.stats_screen import StatsScreen
-from db.database import SessionLocal, get_settings
+from ui.screens.onboarding_screen import OnboardingScreen
+from db.database import SessionLocal, get_settings, update_settings
 
 
 def main(page: ft.Page):
@@ -18,6 +19,7 @@ def main(page: ft.Page):
     with SessionLocal() as db:
         settings = get_settings(db)
         initial_theme = settings.get("theme", "dark")
+        first_launch = not settings.get("onboarding_completed", False)
 
     set_theme(initial_theme)
     page.theme_mode = get_flet_theme_mode(initial_theme)
@@ -102,8 +104,7 @@ def main(page: ft.Page):
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
     stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
 
-    screen_container = ft.Column([timer_screen], expand=True)
-
+    # Навигация
     def on_nav_change(e):
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
@@ -157,6 +158,25 @@ def main(page: ft.Page):
             ),
         ],
     )
+
+    # Онбординг при первом запуске
+    def on_onboarding_complete():
+        with SessionLocal() as db:
+            s = get_settings(db)
+            s["onboarding_completed"] = True
+            update_settings(db, s)
+        # Показываем навигацию и переходим на таймер
+        page.navigation_bar.visible = True
+        screen_container.controls.clear()
+        screen_container.controls.append(timer_screen)
+        page.update()
+
+    if first_launch:
+        onboarding_screen = OnboardingScreen(page, on_onboarding_complete)
+        screen_container = ft.Column([onboarding_screen], expand=True)
+        page.navigation_bar.visible = False
+    else:
+        screen_container = ft.Column([timer_screen], expand=True)
 
     page.add(screen_container)
 
