@@ -1,312 +1,303 @@
 # ui/screens/stats_screen.py
 import flet as ft
-from pathlib import Path
-from ui.theme import COLORS, SHADOWS
 from db.database import (
-    SessionLocal, get_user_state, get_total_stats,
-    get_daily_activity, get_current_streak, get_recent_sessions,
-    get_all_sessions_for_export,
+    SessionLocal, get_total_stats, get_daily_activity,
+    get_current_streak, get_recent_sessions, get_user_state,
 )
-from services.export_service import ExportService
+from ui.theme import COLORS, SHADOWS, with_alpha
+
+DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+SESSION_META = {
+    "work":        ("🍅", "Работа",           COLORS["work"]),
+    "short_break": ("☕", "Короткий перерыв", COLORS["rest"]),
+    "long_break":  ("🌙", "Длинный перерыв",  COLORS["long_break"]),
+}
 
 
 class StatsScreen(ft.Column):
+    """Статистика: серия, метрики, гистограмма с осью, фильтр сессий, premium-тизер."""
+
     def __init__(self, page: ft.Page, on_open_premium=None):
-        super().__init__(
-            spacing=0,
-            expand=True,
-            scroll=ft.ScrollMode.AUTO,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        super().__init__(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
         self._page = page
         self.on_open_premium = on_open_premium
-        self.refresh_data()
+        self.recent_filter = "all"
 
-    def refresh_data(self):
-        """Перечитывает данные из БД и пересобирает экран"""
-        with SessionLocal() as db:
-            user_state = get_user_state(db)
-            self.is_premium = user_state.is_premium
-
-        if not self.is_premium:
-            self.controls = self._build_paywall()
-        else:
-            self.controls = self._build_premium_content()
-        if hasattr(self, '_page'):
-            self._page.update()
-
-    def _build_paywall(self):
-        return [
-            ft.Container(height=40),
-            ft.Text("🔒", size=64, margin=ft.Margin(0, 0, 0, 20)),
-            ft.Text(
-                "Статистика доступна в Premium",
-                size=24,
-                weight=ft.FontWeight.BOLD,
-                color=COLORS["text"],
-                margin=ft.Margin(0, 0, 0, 10),
-            ),
-            ft.Text(
-                "Графики продуктивности, история сессий,\nсерия дней и экспорт данных",
-                size=16,
-                color=COLORS["text_secondary"],
-                text_align=ft.TextAlign.CENTER,
-                margin=ft.Margin(20, 0, 20, 30),
-            ),
-            ft.ElevatedButton(
-                "Открыть Premium",
-                bgcolor=COLORS["primary"],
-                color=COLORS["bg"],
-                on_click=lambda e: self._navigate_to_premium(),
-                width=200,
-                height=50,
-            ),
-        ]
-
-    def _build_premium_content(self):
         with SessionLocal() as db:
             total = get_total_stats(db)
-            activity = get_daily_activity(db, days=7)
+            activity = get_daily_activity(db, 7)
             streak = get_current_streak(db)
-            recent = get_recent_sessions(db, limit=15)
+            recent = get_recent_sessions(db, 50)
+            user = get_user_state(db)
+            self.is_premium = user.is_premium
 
-        controls = []
-        controls.append(
+        self._total = total
+        self._activity = activity
+        self._recent = recent
+
+        self.recent_list = ft.Column(spacing=6)
+        self._fill_recent()
+
+        self.controls = [
             ft.Container(
-                content=ft.Text("📊 Статистика", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
-                padding=ft.padding.Padding(20, 20, 20, 10),
-                alignment=ft.Alignment(0, 0),
-            )
-        )
-        controls.append(self._build_summary_cards(total, streak))
-        controls.append(self._build_activity_chart(activity))
-        controls.append(self._build_export_button())
-        controls.append(self._build_recent_sessions(recent))
-        controls.append(ft.Container(height=40))
-        return controls
-
-    def _build_summary_cards(self, total: dict, streak: int):
-        cards_data = [
-            ("🍅", str(total['work_sessions']), "Сессий"),
-            ("⏱", str(total['total_work_hours']), "Часов"),
-            ("🔥", str(streak), "Дней"),
+                content=ft.Text("Статистика", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                padding=ft.padding.Padding(20, 20, 20, 12),
+            ),
+            self._streak_card(streak),
+            self._metrics_row(activity, total),
+            self._chart_card(activity),
+            self._recent_card(),
+            self._premium_teaser(),
+            ft.Container(height=30),
         ]
-        cards = []
-        for icon, value, label in cards_data:
-            cards.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text(icon, size=24),
-                        ft.Text(value, size=28, weight=ft.FontWeight.BOLD, color=COLORS["primary"]),
-                        ft.Text(label, size=12, color=COLORS["text_secondary"]),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
-                    padding=12,
-                    bgcolor=COLORS["surface"],
-                    border_radius=12,
-                    expand=True,
-                )
-            )
+
+    def refresh_data(self):
+        self.__init__(self._page, self.on_open_premium)
+
+    # ------------------------------------------------------------------ #
+    def _streak_card(self, streak):
         return ft.Container(
-            content=ft.Row(cards, spacing=10),
-            padding=ft.padding.Padding(15, 0, 15, 0),
+            content=ft.Row([
+                ft.Text("🔥", size=34),
+                ft.Column([
+                    ft.Text(f"{streak}", size=30, weight=ft.FontWeight.BOLD, color=COLORS["work"]),
+                    ft.Text("дней подряд", size=13, color=COLORS["text_secondary"]),
+                ], spacing=0),
+            ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=20, bgcolor=COLORS["surface"], border_radius=16,
+            shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12),
         )
 
-    def _build_activity_chart(self, activity: list):
-        day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-        max_minutes = max([d['work_minutes'] for d in activity] + [1])
-        bar_max_height = 100
+    def _metric(self, value, label, color):
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(str(value), size=24, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(label, size=11, color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
+            padding=ft.padding.Padding(8, 14, 8, 14),
+            bgcolor=COLORS["surface"], border_radius=14, shadow=SHADOWS["card"], expand=True,
+        )
 
-        bars = []
-        for d in activity:
-            day_idx = d['date'].weekday()
-            day_name = day_names[day_idx]
-            minutes = d['work_minutes']
-            bar_height = int((minutes / max_minutes) * bar_max_height) if max_minutes > 0 else 0
-            bar_height = max(bar_height, 4)
-            is_today = d == activity[-1]
-            bar_color = COLORS["primary"] if minutes > 0 else COLORS["surface"]
+    def _metrics_row(self, activity, total):
+        minutes = [d["work_minutes"] for d in activity]
+        best = max(minutes) if minutes else 0
+        avg = round(sum(minutes) / 7) if minutes else 0
+        return ft.Container(
+            content=ft.Row([
+                self._metric(f"{best} м", "Лучший день", COLORS["work"]),
+                self._metric(f"{avg} м", "Среднее / день", COLORS["primary"]),
+                self._metric(total["total_work_hours"], "Всего часов", COLORS["long_break"]),
+            ], spacing=10),
+            margin=ft.Margin(20, 0, 20, 12),
+        )
 
-            bar_column = ft.Column(
-                [
-                    ft.Text(
-                        str(minutes) if minutes > 0 else "",
-                        size=10,
-                        color=COLORS["text_secondary"],
-                        height=16,
-                    ),
-                    ft.Container(
-                        width=24,
-                        height=bar_height,
-                        bgcolor=bar_color,
-                        border_radius=4,
-                    ),
-                    ft.Container(
-                        content=ft.Text(
-                            day_name,
-                            size=11,
-                            color=COLORS["text"] if is_today else COLORS["text_secondary"],
-                            weight=ft.FontWeight.BOLD if is_today else ft.FontWeight.NORMAL,
-                        ),
-                        height=20,
-                        alignment=ft.Alignment(0, 1),
-                    ),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=4,
+    # ------------------------------------------------------------------ #
+    def _chart_card(self, activity):
+        # Масштаб по секундам: короткие сессии тоже дают пропорциональный столбик.
+        seconds = [d.get("work_seconds", d["work_minutes"] * 60) for d in activity]
+        has_data = any(s > 0 for s in seconds)
+
+        if not has_data:
+            body = ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.BAR_CHART, size=56, color=with_alpha(COLORS["text_secondary"], 0x55)),
+                    ft.Container(height=10),
+                    ft.Text("Пока нет данных", size=18, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                    ft.Container(height=4),
+                    ft.Text("Запустите первую сессию —\nздесь появится ваша активность.",
+                            size=13, color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                height=150, alignment=ft.Alignment(0, 0),
             )
+        else:
+            maxv = max(seconds) or 1
+            bars = []
+            for d in activity:
+                sec = d.get("work_seconds", d["work_minutes"] * 60)
+                mins = d["work_minutes"]
+                if sec > 0:
+                    h = max(14, int(70 * sec / maxv))
+                    label = str(mins) if mins > 0 else "<1 м."
+                    bar_color = COLORS["work"]
+                    label_color = COLORS["work"]
+                    label_weight = ft.FontWeight.BOLD
+                    bar_shadow = SHADOWS["card"]
+                else:
+                    h = 4
+                    label = ""
+                    bar_color = with_alpha(COLORS["text_secondary"], 0x30)
+                    label_color = COLORS["text_secondary"]
+                    label_weight = ft.FontWeight.NORMAL
+                    bar_shadow = None
+                # Контейнер фиксированной высоты с прижатием к низу через конструктор
+                # Alignment (в 0.85.3 ft.alignment.* констант нет): дни на общей линии,
+                # столбики растут вверх.
+                bars.append(
+                    ft.Container(
+                        height=110, expand=True,
+                        alignment=ft.Alignment(0, 1),
+                        content=ft.Column([
+                            ft.Text(label, size=10, color=label_color, weight=label_weight),
+                            ft.Container(width=24, height=h, border_radius=7,
+                                         bgcolor=bar_color, shadow=bar_shadow),
+                            ft.Text(DAY_LABELS[d["date"].weekday()], size=11,
+                                    color=COLORS["text_secondary"]),
+                        ], spacing=6, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    )
+                )
+            body = ft.Column([
+                ft.Row(bars, spacing=4),
+                ft.Container(height=2, border_radius=1,
+                             bgcolor=with_alpha(COLORS["text_secondary"], 0x30)),
+            ], spacing=6)
 
-            bars.append(
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("Активность за 7 дней", size=16, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                ft.Container(height=16),
+                body,
+            ], spacing=0),
+            padding=20, bgcolor=COLORS["surface"], border_radius=16,
+            shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12),
+        )
+
+    # ------------------------------------------------------------------ #
+    def _recent_card(self):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([ft.Text("Последние сессии", size=16, weight=ft.FontWeight.BOLD, color=COLORS["text"])]),
+                ft.Container(height=10),
+                self._build_filter_chips(),
+                ft.Container(height=12),
+                self.recent_list,
+            ], spacing=0),
+            padding=20, bgcolor=COLORS["surface"], border_radius=16,
+            shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 0),
+        )
+
+    def _build_filter_chips(self):
+        opts = [("all", "Все"), ("work", "Работа"), ("break", "Перерыв")]
+        chips = []
+        for key, label in opts:
+            sel = key == self.recent_filter
+
+            def make(k):
+                return lambda e: self._set_filter(k)
+
+            chips.append(
                 ft.Container(
-                    content=bar_column,
-                    expand=True,
-                    alignment=ft.Alignment(0, 1),
+                    content=ft.Text(label, size=12,
+                                    weight=ft.FontWeight.BOLD if sel else ft.FontWeight.NORMAL,
+                                    color=COLORS["bg"] if sel else COLORS["text_secondary"]),
+                    bgcolor=COLORS["primary"] if sel else COLORS["surface_2"],
+                    border_radius=14, padding=ft.padding.Padding(12, 6, 12, 6),
+                    on_click=make(key), ink=True,
                 )
             )
+        return ft.Row(chips, spacing=8)
 
-        week_start = activity[0]['date'].strftime('%d.%m') if activity else ''
-        week_end = activity[-1]['date'].strftime('%d.%m') if activity else ''
+    def _set_filter(self, key):
+        self.recent_filter = key
+        self._fill_recent()
+        self.controls[4] = self._recent_card()
+        self._page.update()
 
+    def _fill_recent(self):
+        rows = self._recent
+        if self.recent_filter == "work":
+            rows = [r for r in rows if r["type"] == "work"]
+        elif self.recent_filter == "break":
+            rows = [r for r in rows if r["type"] != "work"]
+
+        self.recent_list.controls.clear()
+        if not rows:
+            self.recent_list.controls.append(
+                ft.Container(
+                    content=ft.Text("Нет сессий в этом фильтре", size=13,
+                                    color=COLORS["text_secondary"], italic=True),
+                    padding=ft.padding.Padding(0, 16, 0, 8), alignment=ft.Alignment(0, 0),
+                )
+            )
+            return
+
+        for s in rows[:20]:
+            self.recent_list.controls.append(self._session_row(s))
+
+    def _session_row(self, s):
+        icon, name, color = SESSION_META.get(s["type"], ("•", s["type"], COLORS["text"]))
+        m = s.get("duration_min", 0)
+        sec = s.get("duration_sec", 0)
+        rem = sec % 60 if sec else 0
+        dur = f"{m} мин {rem} сек" if rem else f"{m} мин"
+        when = s["started_at"].strftime("%d.%m %H:%M") if s["started_at"] else ""
+        task = s["task_title"] or "Без задачи"
+        return ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Text(icon, size=18), width=38, height=38, border_radius=12,
+                    bgcolor=with_alpha(color, 0x26), alignment=ft.Alignment(0, 0),
+                ),
+                ft.Column([
+                    ft.Text(name, size=14, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                    ft.Text(task, size=12, color=COLORS["text_secondary"]),
+                ], spacing=2, expand=True),
+                ft.Column([
+                    ft.Text(dur, size=14, weight=ft.FontWeight.BOLD, color=color),
+                    ft.Text(when, size=11, color=COLORS["text_secondary"]),
+                ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=12),
+            padding=12, bgcolor=with_alpha(color, 0x14), border_radius=14,
+            margin=ft.Margin(0, 0, 0, 6),
+        )
+
+    # ------------------------------------------------------------------ #
+    # PREMIUM-ТИЗЕР: базовая статистика бесплатна, расширенная — за замком #
+    # ------------------------------------------------------------------ #
+    def _premium_teaser(self):
+        if self.is_premium:
+            return ft.Container(height=0)  # премиум-пользователю тизер не показываем
         return ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Text("Активность за 7 дней", size=16, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
-                    ft.Text(f"{week_start}–{week_end}", size=12, color=COLORS["text_secondary"]),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=12),
-                ft.Container(
-                    content=ft.Row(
-                        bars,
-                        spacing=6,
-                        vertical_alignment=ft.CrossAxisAlignment.END,
+                    ft.Icon(ft.Icons.INSIGHTS, size=20, color=COLORS["primary"]),
+                    ft.Text("Расширенная аналитика", size=16, weight=ft.FontWeight.BOLD,
+                            color=COLORS["text"], expand=True),
+                    ft.Container(
+                        content=ft.Text("PRO", size=10, weight=ft.FontWeight.BOLD, color=COLORS["bg"]),
+                        bgcolor=COLORS["primary"], border_radius=4,
+                        padding=ft.padding.Padding(6, 2, 6, 2),
                     ),
-                    height=bar_max_height + 56,
+                ], spacing=8),
+                ft.Container(height=12),
+                self._locked_row(ft.Icons.GRID_ON, "Heatmap активности", "Календарь продуктивности как на GitHub"),
+                self._locked_row(ft.Icons.COMPARE_ARROWS, "Сравнение периодов", "Неделя к неделе, месяц к месяцу"),
+                self._locked_row(ft.Icons.FILE_DOWNLOAD, "Полный экспорт", "Все сессии в CSV и JSON"),
+                ft.Container(height=14),
+                ft.ElevatedButton(
+                    "Открыть Premium", bgcolor=COLORS["primary"], color=COLORS["bg"],
+                    on_click=lambda e: self._go_premium(), width=220, height=44,
                 ),
-                ft.Container(height=4),
-                ft.Text(f"Пик: {max_minutes} мин", size=12, color=COLORS["text_secondary"]),
             ], spacing=0),
-            padding=16,
-            bgcolor=COLORS["surface"],
-            border_radius=12,
-            margin=ft.Margin(15, 10, 15, 0),
+            padding=20, bgcolor=COLORS["surface"], border_radius=16,
+            border=ft.BorderSide(1.5, with_alpha(COLORS["primary"], 0x66)),
+            shadow=SHADOWS["card"], margin=ft.Margin(20, 12, 20, 0),
         )
 
-    def _build_export_button(self):
-        # ИСПРАВЛЕНО: убран эмодзи "📤" из текста, оставлена только иконка
+    def _locked_row(self, icon, title, subtitle):
         return ft.Container(
-            content=ft.ElevatedButton(
-                "Экспорт в CSV",
-                bgcolor=COLORS["primary"],
-                color=COLORS["bg"],
-                icon=ft.Icons.FILE_DOWNLOAD,
-                on_click=self._on_export_click,
-                width=250,
-                height=48,
-            ),
-            padding=12,
-            margin=ft.Margin(15, 10, 15, 0),
-            alignment=ft.Alignment(0, 0),
+            content=ft.Row([
+                ft.Icon(icon, size=20, color=COLORS["text_secondary"]),
+                ft.Column([
+                    ft.Text(title, size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
+                    ft.Text(subtitle, size=11, color=COLORS["text_secondary"]),
+                ], spacing=1, expand=True),
+                ft.Icon(ft.Icons.LOCK, size=16, color=COLORS["text_secondary"]),
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.Padding(4, 8, 4, 8),
+            on_click=lambda e: self._go_premium(), ink=True,
         )
 
-    def _on_export_click(self, e):
-        try:
-            file_path = ExportService.generate_full_path()
-
-            with SessionLocal() as db:
-                sessions = get_all_sessions_for_export(db)
-
-            if not sessions:
-                self._show_snackbar("⚠ Нет сессий для экспорта", COLORS["error"])
-                return
-
-            success = ExportService.export_sessions_to_csv(sessions, file_path)
-
-            if success:
-                self._show_snackbar(
-                    f"✅ Файл сохранён: {file_path.name}",
-                    COLORS["success"],
-                )
-            else:
-                self._show_snackbar("✗ Ошибка при сохранении", COLORS["error"])
-
-        except Exception as ex:
-            self._show_snackbar(f"⚠ Ошибка: {ex}", COLORS["error"])
-
-    def _show_snackbar(self, message: str, color: str):
-        self._page.snack_bar = ft.SnackBar(
-            content=ft.Text(message, color=COLORS["bg"], size=14),
-            bgcolor=color,
-            duration=4000,
-        )
-        self._page.snack_bar.open = True
-        self._page.update()
-
-    def _build_recent_sessions(self, recent: list):
-        type_icons = {
-            'work': ("🍅", COLORS["work"]),
-            'short_break': ("☕", COLORS["rest"]),
-            'long_break': ("🌙", COLORS["long_break"]),
-        }
-        type_names = {
-            'work': "Работа",
-            'short_break': "Короткий перерыв",
-            'long_break': "Длинный перерыв",
-        }
-
-        items = []
-        for s in recent:
-            icon, color = type_icons.get(s['type'], ("•", COLORS["text"]))
-            name = type_names.get(s['type'], s['type'])
-            task = s['task_title'] or "Без задачи"
-            time_str = s['started_at'].strftime('%d.%m %H:%M') if s['started_at'] else ''
-
-            # НОВОЕ: показываем секунды если они есть
-            duration_sec = s.get('duration_sec', 0)
-            duration_min = duration_sec // 60
-            duration_rem_sec = duration_sec % 60
-            if duration_rem_sec > 0:
-                duration_str = f"{duration_min} мин {duration_rem_sec} сек"
-            else:
-                duration_str = f"{duration_min} мин"
-
-            items.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text(icon, size=20),
-                        ft.Column([
-                            ft.Text(name, size=14, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
-                            ft.Text(task, size=12, color=COLORS["text_secondary"]),
-                        ], spacing=2, expand=True),
-                        ft.Column([
-                            ft.Text(duration_str, size=14, color=color, weight=ft.FontWeight.BOLD),
-                            ft.Text(time_str, size=11, color=COLORS["text_secondary"]),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
-                    ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=12,
-                    bgcolor=COLORS["surface"],
-                    border_radius=16,
-                    shadow=SHADOWS["card"],
-                    margin=ft.Margin(0, 0, 0, 6),
-                )
-            )
-
-        if not items:
-            items.append(
-                ft.Container(
-                    content=ft.Text("Пока нет завершённых сессий", size=14, color=COLORS["text_secondary"], italic=True),
-                    padding=20,
-                    alignment=ft.Alignment(0, 0),
-                )
-            )
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Text("Последние сессии", size=16, weight=ft.FontWeight.BOLD, color=COLORS["text"], margin=ft.Margin(0, 0, 0, 10)),
-                *items,
-            ]),
-            padding=16,
-            margin=ft.Margin(15, 10, 15, 0),
-        )
-
-    def _navigate_to_premium(self):
+    def _go_premium(self):
         if self.on_open_premium:
             self.on_open_premium()

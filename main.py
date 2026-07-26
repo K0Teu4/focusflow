@@ -12,9 +12,15 @@ from db.database import SessionLocal, get_settings, update_settings
 
 def main(page: ft.Page):
     page.title = "FocusFlow"
-    page.window.width = 400
-    page.window.height = 700
-    page.window.resizable = False
+    # Телефонные пропорции на десктопе: окно не растягивается в простыню,
+    # контент всегда остаётся в мобильной ширине по центру.
+    page.window.width = 440
+    page.window.height = 820
+    page.window.min_width = 380
+    page.window.max_width = 520
+    page.window.min_height = 640
+    page.window.max_height = 940
+    page.window.resizable = True
 
     with SessionLocal() as db:
         settings = get_settings(db)

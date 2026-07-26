@@ -188,6 +188,7 @@ def get_daily_activity(db: Session, days: int = 7) -> list:
             'date': day,
             'work_sessions': len(sessions),
             'work_minutes': sum(s.duration_sec for s in sessions) // 60,
+            'work_seconds': sum(s.duration_sec for s in sessions),
         })
     return result
 
