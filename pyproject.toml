@@ -24,8 +24,14 @@ exclude = [
     "test_full_app.py",
     "test_csv_export.py",
     "test_sounds.py",
+    "test_app.py",
     "README.md",
 ]
+
+# Первый кадр от ОС при тапе по иконке — тёмный бренд вместо дефолтного белого.
+[tool.flet.splash]
+color = "#141A2E"
+dark_color = "#141A2E"
 
 [tool.flet.android]
 permissions = [

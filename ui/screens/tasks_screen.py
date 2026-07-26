@@ -19,7 +19,7 @@ CATEGORY_COLORS = {
 
 
 class TasksScreen(ft.Column):
-    """Список задач: поиск, группировка по категориям, more-меню, empty states."""
+    """Список задач: поиск, группировка, more-меню, empty states, плавные удаления."""
 
     def __init__(self, page: ft.Page, on_focus_task=None):
         super().__init__(spacing=0, expand=True)
@@ -29,6 +29,7 @@ class TasksScreen(ft.Column):
         self.selected_category = "work"
         self.search_query = ""
         self._cards = []
+        self._card_map = {}      # task.id -> карточка (для анимации из меню)
         self._reveal_task = None
 
         self.task_input = ft.TextField(
@@ -40,17 +41,13 @@ class TasksScreen(ft.Column):
             icon=ft.Icons.ADD_CIRCLE, icon_color=COLORS["primary"], icon_size=32,
             on_click=self.on_add_task,
         )
-
-        # Поиск: иконка-лупа через prefix_icon (без эмодзи в hint, чтобы не двоилось), на всю ширину.
         self.search_field = ft.TextField(
             hint_text="Поиск задач", expand=True,
             border_color=with_alpha(COLORS["text_secondary"], 0x55), color=COLORS["text"],
             bgcolor=COLORS["surface"], prefix_icon=ft.Icons.SEARCH,
             on_change=self._on_search,
         )
-
         self.category_chips = ft.Row(spacing=8, controls=self._build_category_chips(), scroll=ft.ScrollMode.AUTO)
-
         self.show_done_toggle = ft.Switch(
             label="Выполненные", value=False,
             active_color=COLORS["primary"], inactive_thumb_color=COLORS["text_secondary"],
@@ -58,7 +55,6 @@ class TasksScreen(ft.Column):
             label_text_style=ft.TextStyle(size=13, color=COLORS["text_secondary"]),
         )
         self.counter_text = ft.Text("", size=13, color=COLORS["text_secondary"])
-
         self.tasks_list = ft.ListView(expand=True, spacing=6, padding=20)
 
         self.controls = [
@@ -125,6 +121,7 @@ class TasksScreen(ft.Column):
 
         self.tasks_list.controls.clear()
         self._cards = []
+        self._card_map = {}
 
         with SessionLocal() as db:
             all_tasks = get_tasks(db, include_done=True)
@@ -154,6 +151,7 @@ class TasksScreen(ft.Column):
             for task in group:
                 card = self._create_task_card(task, task._count, start_hidden=animate)
                 self._cards.append(card)
+                self._card_map[task.id] = card
                 self.tasks_list.controls.append(card)
 
         self._page.update()
@@ -203,26 +201,55 @@ class TasksScreen(ft.Column):
             pass
 
     # ------------------------------------------------------------------ #
-    def _create_task_card(self, task, pomodoro_count, start_hidden=False):
-        def toggle_done():
-            new_val = not task.is_done
-            with SessionLocal() as db:
-                if new_val:
-                    complete_task(db, task.id)
-                else:
-                    update_task(db, task.id, is_done=False)
-            self.load_tasks()
-            if new_val:
-                show_toast(self._page, f"Выполнено: {task.title}",
-                           ft.Icons.CHECK_CIRCLE, COLORS["success"],
-                           action_label="Отменить", on_action=lambda ev: self._uncomplete(task.id))
+    # ПЛАВНОСТЬ: fade-out карточки перед удалением/исчезновением          #
+    # ------------------------------------------------------------------ #
+    async def _animate_out(self, card):
+        if card is None:
+            return
+        card.opacity = 0.0
+        card.scale = 0.92
+        self._page.update()
+        await asyncio.sleep(0.22)
 
+    async def _do_toggle(self, task, card):
+        """Чекбокс: плавно убираем карточку только если она покидает список."""
+        new_val = not task.is_done
+        will_leave = new_val and not self.show_done
+        if will_leave:
+            await self._animate_out(card)
+        with SessionLocal() as db:
+            if new_val:
+                complete_task(db, task.id)
+            else:
+                update_task(db, task.id, is_done=False)
+        self.load_tasks()
+        if new_val:
+            show_toast(self._page, f"Выполнено: {task.title}",
+                       ft.Icons.CHECK_CIRCLE, COLORS["success"],
+                       action_label="Отменить",
+                       on_action=lambda ev: self._uncomplete(task.id))
+
+    async def _do_delete(self, task, card):
+        """Удаление: всегда плавно убираем карточку, затем toast с undo."""
+        title, cat, done = task.title, task.category, task.is_done
+        await self._animate_out(card)
+        with SessionLocal() as db:
+            delete_task(db, task.id)
+        self.load_tasks()
+        show_toast(self._page, f"Удалено: {title}", ft.Icons.DELETE_OUTLINE, COLORS["error"],
+                   action_label="Отменить",
+                   on_action=lambda ev: self._restore_task(title, cat, done))
+
+    # ------------------------------------------------------------------ #
+    def _create_task_card(self, task, pomodoro_count, start_hidden=False):
         cat_color = CATEGORY_COLORS.get(task.category, COLORS["cat_work"])
 
         checkbox = ft.Checkbox(value=task.is_done, check_color=COLORS["primary"])
         check_zone = ft.Container(
             content=checkbox, width=48, height=48,
-            alignment=ft.Alignment(0, 0), on_click=lambda e: toggle_done(), ink=True,
+            alignment=ft.Alignment(0, 0),
+            on_click=lambda e: asyncio.create_task(self._do_toggle(task, card)),
+            ink=True,
         )
 
         title_container = ft.Container(
@@ -257,6 +284,7 @@ class TasksScreen(ft.Column):
             border_radius=16, bgcolor=COLORS["surface"], shadow=SHADOWS["card"],
             margin=ft.Margin(0, 0, 0, 8),
             opacity=0.0 if start_hidden else 1.0,
+            scale=1.0,
             animate=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
         )
         card.on_hover = self._make_hover(card)
@@ -286,10 +314,13 @@ class TasksScreen(ft.Column):
                 sheet_action(
                     ft.Icons.UNDO if is_done else ft.Icons.CHECK_CIRCLE_OUTLINE,
                     "Вернуть в активные" if is_done else "Отметить выполненной",
-                    lambda e: (close(), self._toggle_from_menu(task)),
+                    lambda e: (close(), asyncio.create_task(
+                        self._do_toggle(task, self._card_map.get(task.id)))),
                 ),
                 sheet_action(ft.Icons.DELETE_OUTLINE, "Удалить",
-                             lambda e: (close(), self._delete(task)), danger=True),
+                             lambda e: (close(), asyncio.create_task(
+                                 self._do_delete(task, self._card_map.get(task.id)))),
+                             danger=True),
             ]
 
         show_sheet(self._page, task.title, build)
@@ -318,27 +349,6 @@ class TasksScreen(ft.Column):
     def _focus(self, task):
         if self.on_focus_task:
             self.on_focus_task(task.id, task.category)
-
-    def _toggle_from_menu(self, task):
-        new_val = not task.is_done
-        with SessionLocal() as db:
-            if new_val:
-                complete_task(db, task.id)
-            else:
-                update_task(db, task.id, is_done=False)
-        self.load_tasks()
-        if new_val:
-            show_toast(self._page, f"Выполнено: {task.title}",
-                       ft.Icons.CHECK_CIRCLE, COLORS["success"],
-                       action_label="Отменить", on_action=lambda ev: self._uncomplete(task.id))
-
-    def _delete(self, task):
-        title, cat, done = task.title, task.category, task.is_done
-        with SessionLocal() as db:
-            delete_task(db, task.id)
-        self.load_tasks()
-        show_toast(self._page, f"Удалено: {title}", ft.Icons.DELETE_OUTLINE, COLORS["error"],
-                   action_label="Отменить", on_action=lambda ev: self._restore_task(title, cat, done))
 
     def _restore_task(self, title, category, was_done):
         with SessionLocal() as db:

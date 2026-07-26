@@ -38,7 +38,7 @@ def show_sheet(page: ft.Page, title: str, build_items):
     scrim = ft.Container(
         left=0, right=0, top=0, bottom=0,
         bgcolor=with_alpha("#000000", 0x80), opacity=0.0,
-        animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
+        animate=ft.Animation(240, ft.AnimationCurve.EASE_OUT),
     )
     sheet = ft.Container(
         left=0, right=0, bottom=0,
@@ -48,7 +48,7 @@ def show_sheet(page: ft.Page, title: str, build_items):
         shadow=SHADOWS["elevated"],
         padding=ft.padding.Padding(6, 4, 6, 6),
         offset=ft.Offset(0, 1), opacity=0.0,
-        animate=ft.Animation(240, ft.AnimationCurve.EASE_OUT),
+        animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
     )
     state = {"scrim": scrim, "sheet": sheet}
 
