@@ -206,7 +206,7 @@ class SettingsScreen(ft.Column):
     async def _restore_scroll(self, pos):
         try:
             await asyncio.sleep(0.06)
-            self.scroll_to(offset=pos, duration=0)
+            await self.scroll_to(offset=pos, duration=0)
         except Exception:
             pass
 
