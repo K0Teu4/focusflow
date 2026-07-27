@@ -1,4 +1,5 @@
 # ui/screens/settings_screen.py
+import asyncio
 import flet as ft
 from db.database import SessionLocal, get_settings, update_settings, get_user_state
 from services.sound_service import SoundService, SOUNDS
@@ -8,7 +9,6 @@ from ui.theme import (
 )
 from ui.sheet import show_sheet, sheet_action
 
-# Фиксированные ширины правой сетки длительности
 _F_W = 56
 _U_W = 26
 _SP = 6
@@ -16,7 +16,8 @@ _PAD = ft.padding.Padding(10, 12, 10, 12)
 
 
 class SettingsScreen(ft.Column):
-    """Настройки: длительность, поведение, темы (Free 2 / Premium 6), premium-статус."""
+    """Настройки: длительность, поведение, темы (Free 2 / Premium 6), premium-статус.
+    Позиция скролла сохраняется между сменами темы и переходами на вкладку."""
 
     def __init__(self, page: ft.Page, on_settings_changed=None, on_open_premium=None, on_theme_changed=None):
         super().__init__(spacing=15, expand=True, scroll=ft.ScrollMode.AUTO)
@@ -26,6 +27,12 @@ class SettingsScreen(ft.Column):
         self.on_theme_changed = on_theme_changed
         self.sound_service = SoundService()
         self.sound_service.bind_page(page)
+
+        # Подключаем on_scroll присваиванием (безопасно: не крашит, если свойства нет)
+        try:
+            self.on_scroll = self._on_scroll
+        except Exception:
+            pass
 
         with SessionLocal() as db:
             settings = get_settings(db)
@@ -91,23 +98,10 @@ class SettingsScreen(ft.Column):
             on_change=auto_save, label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
         )
 
-        current_sound = settings.get("sound_type", "bell")
-        current_sound_name = SOUNDS.get(current_sound, SOUNDS["bell"])["name"]
-        self._sound_label = ft.Text(current_sound_name, size=14, color=COLORS["text"], expand=True)
-        self.sound_button = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.Icons.MUSIC_NOTE, size=18, color=COLORS["primary"]),
-                self._sound_label,
-                ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=22, color=COLORS["text_secondary"]),
-            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.padding.Padding(14, 12, 10, 12),
-            bgcolor=COLORS["surface_2"], border_radius=12,
-            border=ft.BorderSide(1, with_alpha(COLORS["text_secondary"], 0x55)),
-            on_click=self._open_sound_dialog, ink=True,
-        )
-        sound_row = ft.Column([
+        # Кнопка звука пересобирается из БД — выбранное имя всегда актуально.
+        self.sound_row = ft.Column([
             ft.Text("Звук уведомления", size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
-            self.sound_button,
+            self._build_sound_button(),
         ], spacing=6)
 
         self.auto_start_checkbox = ft.Switch(
@@ -149,7 +143,7 @@ class SettingsScreen(ft.Column):
                             ft.Text("FocusFlow Premium", size=16, weight=ft.FontWeight.BOLD, color=COLORS["primary"])],
                            spacing=8),
                     ft.Container(height=8),
-                    ft.Text("Графики, экспорт, 3+ звука и темы", size=13, color=COLORS["text_secondary"]),
+                    ft.Text("Режим Фокус, 6 тем, heatmap и 3+ звука", size=13, color=COLORS["text_secondary"]),
                     ft.Container(height=12),
                     ft.ElevatedButton("Открыть Premium", bgcolor=COLORS["primary"], color=COLORS["bg"],
                                       on_click=self._navigate_to_premium, width=200, height=44),
@@ -158,7 +152,7 @@ class SettingsScreen(ft.Column):
                 border=ft.BorderSide(1.5, COLORS["primary"]), margin=ft.Margin(20, 0, 20, 0),
             )
 
-        # === СБОРКА ===
+        # === СБОРКА (блок «Premium функции / замок» убран — темы гейтятся в «Оформлении») ===
         self.controls = [
             ft.Container(
                 content=ft.Column([
@@ -183,25 +177,64 @@ class SettingsScreen(ft.Column):
             ft.Container(
                 content=ft.Column([
                     ft.Text("Поведение", size=18, color=COLORS["text"]),
-                    ft.Container(height=8), self.sound_checkbox, ft.Container(height=8), sound_row,
+                    ft.Container(height=8), self.sound_checkbox, ft.Container(height=8), self.sound_row,
                     ft.Container(height=12), self.auto_start_checkbox, ft.Container(height=8), delay_row,
                 ], spacing=8),
                 padding=20, bgcolor=COLORS["surface"], border_radius=16, margin=ft.Margin(20, 0, 20, 0),
             ),
             self._build_theme_section(),
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([ft.Text("Premium функции", size=18, color=COLORS["text"]), self._create_pro_badge()], spacing=8),
-                    ft.Container(height=8),
-                    self._create_locked_feature(ft.Icons.PALETTE, "Кастомные темы"),
-                ], spacing=8),
-                padding=20, bgcolor=COLORS["surface"], border_radius=16, margin=ft.Margin(20, 0, 20, 0),
-            ),
             ft.Container(height=40),
         ]
 
+        # Восстановление позиции скролла (после смены темы / возврата на вкладку)
+        pos = getattr(page, "_ff_settings_scroll", 0.0)
+        if pos and pos > 0:
+            try:
+                asyncio.create_task(self._restore_scroll(pos))
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ #
+    # СКРОЛЛ: сохранение / восстановление                                 #
+    # ------------------------------------------------------------------ #
+    def _on_scroll(self, e):
+        try:
+            self._page._ff_settings_scroll = float(getattr(e, "pixels", 0) or 0)
+        except Exception:
+            pass
+
+    async def _restore_scroll(self, pos):
+        try:
+            await asyncio.sleep(0.06)
+            self.scroll_to(offset=pos, duration=0)
+        except Exception:
+            pass
+
     def refresh_data(self):
         self.__init__(self._page, self.on_settings_changed, self.on_open_premium, self.on_theme_changed)
+
+    # ------------------------------------------------------------------ #
+    # ЗВУК: пересборка кнопки из БД                                       #
+    # ------------------------------------------------------------------ #
+    def _build_sound_button(self):
+        with SessionLocal() as db:
+            cur = get_settings(db).get("sound_type", "bell")
+        name = SOUNDS.get(cur, SOUNDS["bell"])["name"]
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.MUSIC_NOTE, size=18, color=COLORS["primary"]),
+                ft.Text(name, size=14, color=COLORS["text"], expand=True),
+                ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=22, color=COLORS["text_secondary"]),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.Padding(14, 12, 10, 12),
+            bgcolor=COLORS["surface_2"], border_radius=12,
+            border=ft.BorderSide(1, with_alpha(COLORS["text_secondary"], 0x55)),
+            on_click=self._open_sound_dialog, ink=True,
+        )
+
+    def _refresh_sound_button(self):
+        """Подменить кнопку звука в sound_row свежей (после выбора)."""
+        self.sound_row.controls[1] = self._build_sound_button()
 
     # ------------------------------------------------------------------ #
     # ТЕМЫ: сетка 2×3 с превью, Free 2 / Premium 6                        #
@@ -235,10 +268,8 @@ class SettingsScreen(ft.Column):
         theme = THEMES[name]
         c = theme["colors"]
         is_selected = name == self._current_theme
-        is_premium = is_premium_theme(name)
-        locked = is_premium and not self.is_premium
+        locked = is_premium_theme(name) and not self.is_premium
 
-        # Превью: три кружка (bg, primary, work) + имя
         preview = ft.Row([
             ft.Container(width=18, height=18, border_radius=9, bgcolor=c["bg"],
                          border=ft.BorderSide(1, with_alpha(COLORS["text_secondary"], 0x55))),
@@ -253,8 +284,7 @@ class SettingsScreen(ft.Column):
             ft.Icon(ft.Icons.CHECK_CIRCLE if is_selected else
                     (ft.Icons.LOCK if locked else ft.Icons.CIRCLE_OUTLINED),
                     size=18,
-                    color=COLORS["primary"] if is_selected else
-                          (COLORS["text_secondary"] if locked else COLORS["text_secondary"])),
+                    color=COLORS["primary"] if is_selected else COLORS["text_secondary"]),
         ], spacing=6)
 
         def on_click(e):
@@ -282,25 +312,10 @@ class SettingsScreen(ft.Column):
         )
 
     # ------------------------------------------------------------------ #
-    def _on_theme_change(self, e):
-        # Не используется (заменён на _theme_card.on_click), оставлен для совместимости
-        pass
-
     def _create_pro_badge(self):
         return ft.Container(
             content=ft.Text("PRO", size=10, weight=ft.FontWeight.BOLD, color=COLORS["bg"]),
             bgcolor=COLORS["primary"], border_radius=4, padding=ft.padding.Padding(6, 2, 6, 2),
-        )
-
-    def _create_locked_feature(self, icon, title):
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon(icon, size=20, color=COLORS["text_secondary"]),
-                ft.Text(title, size=14, color=COLORS["text_secondary"], expand=True),
-                ft.Icon(ft.Icons.LOCK, size=16, color=COLORS["text_secondary"]),
-            ], spacing=10),
-            padding=12, bgcolor=COLORS["bg"], border_radius=8, opacity=0.7,
-            on_click=lambda e: self._navigate_to_premium(e), ink=True,
         )
 
     def _open_sound_dialog(self, e):
@@ -341,7 +356,8 @@ class SettingsScreen(ft.Column):
             settings = get_settings(db)
             settings["sound_type"] = sound_id
             update_settings(db, settings)
-        self._sound_label.text = SOUNDS.get(sound_id, SOUNDS["bell"])["name"]
+        # Пересобираем кнопку — имя гарантированно обновится на экране.
+        self._refresh_sound_button()
         self._page.update()
         if self.on_settings_changed:
             self.on_settings_changed(settings)

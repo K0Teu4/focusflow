@@ -1,313 +1,241 @@
 # ui/screens/premium_screen.py
 import flet as ft
-from ui.theme import COLORS, SHADOWS
 from db.database import SessionLocal, get_user_state, update_premium_status
-from datetime import datetime, timedelta
+from ui.theme import COLORS, SHADOWS, with_alpha
+from ui.toast import show_toast
+from ui.sheet import show_sheet, sheet_action
+
+# --------------------------------------------------------------------------- #
+# РЕЕСТР ФИЧ                                                                  #
+# PREMIUM_FEATURES — за замком для Free (gated=True).                         #
+# FREE_FEATURES    — всегда доступны (галочка у всех).                        #
+# COMING_FEATURES  — в разработке («скоро»).                                  #
+# Цвет в кортеже — для живой разноцветной сетки иконок.                       #
+# --------------------------------------------------------------------------- #
+PREMIUM_FEATURES = [
+    (ft.Icons.FULLSCREEN, "Режим «Фокус»",
+     "Полноэкранный таймер без отвлекающих факторов", "#7AA2F7"),
+    (ft.Icons.PALETTE, "Кастомные темы",
+     "6 уникальных оформлений интерфейса", "#BB9AF7"),
+    (ft.Icons.GRID_ON, "Heatmap активности",
+     "Календарь продуктивности по месяцам", "#F7768E"),
+    (ft.Icons.SHOW_CHART, "Расширенная статистика",
+     "Сравнение периодов и тренды за 30 и 90 дней", "#7DCFFF"),
+    (ft.Icons.MUSIC_NOTE, "Расширенные звуки",
+     "3+ звука уведомления на выбор", "#9ECE6A"),
+]
+
+FREE_FEATURES = [
+    (ft.Icons.CLOUD_DOWNLOAD_OUTLINED, "Экспорт и резервная копия",
+     "Сохранение всех сессий в CSV и JSON", "#7DCFFF"),
+    (ft.Icons.BAR_CHART, "Базовая статистика",
+     "Графики, серия дней и последние сессии", "#9ECE6A"),
+]
+
+COMING_FEATURES = [
+    (ft.Icons.CLOUD_OUTLINED, "Облачная синхронизация",
+     "Одни данные на всех ваших устройствах", "#8B94A8"),
+]
 
 
 class PremiumScreen(ft.Column):
+    """Экран Premium: статус/оффер + актуальный список фич с гейтингом."""
+
     def __init__(self, page: ft.Page, on_premium_changed=None):
-        super().__init__(
-            spacing=0,
-            expand=True,
-            scroll=ft.ScrollMode.AUTO,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        super().__init__(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
         self._page = page
         self.on_premium_changed = on_premium_changed
-        self.refresh_data()
 
-    def refresh_data(self):
-        """Перечитывает Premium статус из БД и пересобирает экран"""
         with SessionLocal() as db:
-            user_state = get_user_state(db)
-            self.is_premium = user_state.is_premium
-            self.premium_expires = user_state.premium_expires_at
+            user = get_user_state(db)
+            self.is_premium = user.is_premium
+            self.premium_expires = user.premium_expires_at
 
-        self.controls = self._build_content()
-        if hasattr(self, '_page'):
-            self._page.update()
-
-    def _build_content(self):
-        controls = []
-
-        # === КАРТОЧКА СТАТУСА PREMIUM ===
-        if self.is_premium:
-            expires_text = (
-                f"до {self.premium_expires.strftime('%d.%m.%Y')}"
-                if self.premium_expires else "бессрочно"
-            )
-            controls.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("⭐", size=40),
-                        ft.Text(
-                            "Premium активен",
-                            size=22,
-                            weight=ft.FontWeight.BOLD,
-                            color=COLORS["success"],
-                        ),
-                        ft.Text(
-                            f"Действует {expires_text}",
-                            size=14,
-                            color=COLORS["text_secondary"],
-                        ),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
-                    padding=24,
-                    bgcolor=COLORS["surface"],
-                    border_radius=16,
-                    border=ft.BorderSide(2, COLORS["success"]),
-                    shadow=SHADOWS["card"],
-                    margin=ft.Margin(20, 20, 20, 20),
-                )
-            )
-        else:
-            controls.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text(
-                            "FocusFlow Premium",
-                            size=32,
-                            weight=ft.FontWeight.BOLD,
-                            color=COLORS["primary"],
-                        ),
-                        ft.Text(
-                            "Разблокируйте все возможности",
-                            size=18,
-                            color=COLORS["text_secondary"],
-                        ),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
-                    padding=ft.padding.Padding(20, 30, 20, 20),
-                )
-            )
-
-        # === СПИСОК ПРЕИМУЩЕСТВ ===
-        features = [
-            ("📊", "История и графики", "Статистика за всё время"),
-            ("📤", "Экспорт данных", "Сохранение в CSV"),
-            ("🎵", "Расширенные звуки", "3+ звука на выбор"),
-            ("🎨", "Кастомные темы", "Персонализация интерфейса"),
-            ("☁️", "Облако", "Синхронизация между устройствами"),
+        self.controls = [
+            ft.Container(
+                content=ft.Text("Premium", size=28, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                padding=ft.padding.Padding(20, 20, 20, 12)),
+            self._status_card(),
+            self._section_title("Входит в Premium", COLORS["primary"]),
+            self._features_block(PREMIUM_FEATURES, gated=True),
+            self._section_title("Во всех тарифах", COLORS["success"]),
+            self._features_block(FREE_FEATURES, gated=False, coming=False),
+            self._section_title("Скоро", COLORS["text_secondary"]),
+            self._features_block(COMING_FEATURES, gated=False, coming=True),
+            ft.Container(height=12),
+            self._action_area(),
+            ft.Container(height=40),
         ]
 
-        features_list = ft.Column(spacing=8, margin=ft.Margin(20, 0, 20, 20))
-        for icon, title, desc in features:
-            features_list.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text(icon, size=24),
-                        ft.Column([
-                            ft.Text(
-                                title,
-                                size=15,
-                                weight=ft.FontWeight.BOLD,
-                                color=COLORS["text"],
-                            ),
-                            ft.Text(
-                                desc,
-                                size=12,
-                                color=COLORS["text_secondary"],
-                            ),
-                        ], spacing=2, expand=True),
-                        ft.Icon(
-                            ft.Icons.CHECK_CIRCLE,
-                            size=20,
-                            color=COLORS["success"],
-                        ),
-                    ], spacing=12),
-                    padding=14,
-                    bgcolor=COLORS["surface"],
-                    border_radius=16,
-                    shadow=SHADOWS["card"],
-                )
-            )
-        controls.append(features_list)
+    def refresh_data(self):
+        self.__init__(self._page, self.on_premium_changed)
 
-        # === ТАРИФЫ (только для Free) ===
-        if not self.is_premium:
-            # 1 месяц
-            monthly = ft.Container(
-                content=ft.Column([
-                    ft.Text("1 месяц", size=14, color=COLORS["text_secondary"]),
-                    ft.Text(
-                        "149 ₽",
-                        size=28,
-                        weight=ft.FontWeight.BOLD,
-                        color=COLORS["primary"],
-                    ),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
-                padding=20,
-                border=ft.BorderSide(2, COLORS["surface"]),
-                border_radius=16,
-                shadow=SHADOWS["card"],
-                width=140,
-                on_click=lambda e: self._show_purchase_dialog("monthly"),
-                ink=True,
-            )
-
-            # 1 год с бейджем "Выгодно!"
-            yearly = ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text("1 год", size=14, color=COLORS["text_secondary"]),
-                        ft.Container(
-                            content=ft.Text(
-                                "🔥 Выгодно!",
-                                size=10,
-                                weight=ft.FontWeight.BOLD,
-                                color=COLORS["bg"],
-                            ),
-                            bgcolor=COLORS["success"],
-                            border_radius=4,
-                            padding=ft.padding.Padding(4, 2, 4, 2),
-                        ),
-                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=6),
-                    ft.Text(
-                        "990 ₽",
-                        size=28,
-                        weight=ft.FontWeight.BOLD,
-                        color=COLORS["primary"],
-                    ),
-                    ft.Text(
-                        "−45%",
-                        size=13,
-                        color=COLORS["success"],
-                        weight=ft.FontWeight.BOLD,
-                    ),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
-                padding=20,
-                border=ft.BorderSide(2, COLORS["primary"]),
-                border_radius=16,
-                shadow=SHADOWS["card"],
-                width=140,
-                on_click=lambda e: self._show_purchase_dialog("yearly"),
-                ink=True,
-            )
-
-            controls.append(
-                ft.Row(
-                    [monthly, yearly],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=20,
-                )
-            )
-
-            # Кнопка "Купить Premium" на всю ширину
-            controls.append(
-                ft.Container(
-                    content=ft.ElevatedButton(
-                        "Купить Premium",
-                        bgcolor=COLORS["success"],
-                        color=COLORS["bg"],
-                        on_click=lambda e: self._show_purchase_dialog("yearly"),
-                        width=300,
-                        height=52,
-                    ),
-                    padding=ft.padding.Padding(20, 20, 20, 0),
-                    alignment=ft.Alignment(0, 0),
-                )
-            )
-
-            # Текстовая ссылка "Восстановить покупку"
-            controls.append(
-                ft.TextButton(
-                    "Восстановить покупку",
-                    style=ft.ButtonStyle(color=COLORS["text_secondary"]),
-                    on_click=self._on_restore,
-                    margin=ft.Margin(0, 10, 0, 20),
-                )
-            )
-
-        controls.append(ft.Container(height=30))
-        return controls
-
-    def _show_purchase_dialog(self, plan: str):
-        """Показывает диалог покупки (заглушка для RuStore Billing)"""
-        plan_name = "1 месяц" if plan == "monthly" else "1 год"
-        price = "149 ₽" if plan == "monthly" else "990 ₽"
-
-        def on_confirm(e):
-            # Заглушка: активируем Premium на 30/365 дней
-            days = 30 if plan == "monthly" else 365
-            expires_at = datetime.utcnow() + timedelta(days=days)
-
-            with SessionLocal() as db:
-                update_premium_status(db, True, expires_at)
-
-            dialog.open = False
-            self._page.update()
-
-            # Обновляем оба экрана после покупки
-            self.refresh_data()
-            if self.on_premium_changed:
-                self.on_premium_changed(True)
-
-            # Показываем успех
-            success_dialog = ft.AlertDialog(
-                title=ft.Text("🎉 Premium активирован!"),
-                content=ft.Text(
-                    f"Подписка '{plan_name}' активна до {expires_at.strftime('%d.%m.%Y')}"
-                ),
-                actions=[
-                    ft.TextButton(
-                        "Отлично",
-                        on_click=lambda e: self._close_dialog(success_dialog),
-                    ),
-                ],
-            )
-            self._page.overlay.append(success_dialog)
-            success_dialog.open = True
-            self._page.update()
-
-        def on_cancel(e):
-            dialog.open = False
-            self._page.update()
-
-        dialog = ft.AlertDialog(
-            title=ft.Text(f"Купить Premium ({plan_name})"),
-            content=ft.Column([
-                ft.Text(f"Стоимость: {price}", size=16),
-                ft.Text(
-                    "Подписка активируется автоматически",
-                    size=14,
-                    color=COLORS["text_secondary"],
-                ),
-                ft.Container(height=8),
-                ft.Text(
-                    "В реальной версии — интеграция с RuStore Billing",
-                    size=12,
-                    color=COLORS["text_secondary"],
-                    italic=True,
-                ),
-            ], spacing=8),
-            actions=[
-                ft.TextButton("Отмена", on_click=on_cancel),
-                ft.TextButton("Купить", on_click=on_confirm),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        self._page.overlay.append(dialog)
-        dialog.open = True
-        self._page.update()
-
-    def _on_restore(self, e):
-        """Восстановление покупки (заглушка)"""
-        dialog = ft.AlertDialog(
-            title=ft.Text("Восстановление покупки"),
-            content=ft.Text(
-                "В реальной версии — проверка через RuStore Billing API"
+    # ------------------------------------------------------------------ #
+    # СТАТУС-КАРТОЧКА: двухслойный ореол у звезды для глубины             #
+    # ------------------------------------------------------------------ #
+    def _star_halo(self, color):
+        """Звезда в двухслойном светящемся ореоле (внешнее свечение + подложка)."""
+        return ft.Container(
+            width=92, height=92, border_radius=46,
+            bgcolor=with_alpha(color, 0x10),  # внешнее мягкое свечение
+            alignment=ft.Alignment(0, 0),
+            content=ft.Container(
+                width=70, height=70, border_radius=35,
+                bgcolor=with_alpha(color, 0x22),  # внутренняя подложка
+                alignment=ft.Alignment(0, 0),
+                content=ft.Icon(ft.Icons.STAR_ROUNDED, size=40, color=color),
             ),
-            actions=[
-                ft.TextButton(
-                    "Понятно",
-                    on_click=lambda e: self._close_dialog(dialog),
-                ),
-            ],
         )
-        self._page.overlay.append(dialog)
-        dialog.open = True
-        self._page.update()
 
-    def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+    def _status_card(self):
+        if self.is_premium:
+            expires_text = (f"Действует до {self.premium_expires.strftime('%d.%m.%Y')}"
+                            if self.premium_expires else "Действует бессрочно")
+            accent = COLORS["success"]
+            body = ft.Column([
+                self._star_halo("#FFD54F"),
+                ft.Container(height=14),
+                ft.Text("Premium активен", size=24, weight=ft.FontWeight.BOLD, color=accent),
+                ft.Container(height=4),
+                ft.Text(expires_text, size=14, color=COLORS["text_secondary"]),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+            border_color = with_alpha(accent, 0x55)
+        else:
+            accent = COLORS["primary"]
+            body = ft.Column([
+                self._star_halo(accent),
+                ft.Container(height=14),
+                ft.Text("FocusFlow Premium", size=24, weight=ft.FontWeight.BOLD, color=COLORS["text"]),
+                ft.Container(height=6),
+                ft.Text("Раскройте весь потенциал фокуса:\nбольше тем, глубокая аналитика\nи режим без отвлекающих факторов.",
+                        size=14, color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+            border_color = with_alpha(accent, 0x55)
+
+        return ft.Container(
+            content=body,
+            padding=ft.padding.Padding(20, 26, 20, 26),
+            bgcolor=COLORS["surface"], border_radius=20,
+            border=ft.BorderSide(1.5, border_color),
+            shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 16))
+
+    # ------------------------------------------------------------------ #
+    # ЗАГОЛОВОК СЕКЦИИ: акцентная полоска слева (не hairline на всю ширину)#
+    # ------------------------------------------------------------------ #
+    def _section_title(self, text, accent):
+        return ft.Container(
+            content=ft.Row([
+                ft.Container(width=3, height=14, border_radius=2, bgcolor=accent),
+                ft.Text(text.upper(), size=12, weight=ft.FontWeight.BOLD,
+                        color=COLORS["text_secondary"]),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.Padding(24, 10, 24, 8))
+
+    # ------------------------------------------------------------------ #
+    def _features_block(self, features, gated=False, coming=False):
+        return ft.Container(
+            content=ft.Column([self._feature_row(*f, gated=gated, coming=coming) for f in features], spacing=8),
+            margin=ft.Margin(20, 0, 20, 8))
+
+    def _feature_row(self, icon, title, subtitle, color, gated=False, coming=False):
+        # Статус справа: «скоро» / замок / галочка
+        if coming:
+            status = ft.Icon(ft.Icons.ACCESS_TIME, size=20, color=COLORS["text_secondary"])
+        elif gated and not self.is_premium:
+            status = ft.Icon(ft.Icons.LOCK_OUTLINE, size=18, color=COLORS["text_secondary"])
+        else:
+            status = ft.Container(
+                content=ft.Icon(ft.Icons.CHECK, size=14, color=COLORS["bg"]),
+                width=22, height=22, border_radius=11,
+                bgcolor=COLORS["success"], alignment=ft.Alignment(0, 0))
+
+        locked = gated and not self.is_premium
+
+        row = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(icon, size=22, color=color),
+                    width=44, height=44, border_radius=12,
+                    bgcolor=with_alpha(color, 0x1A), alignment=ft.Alignment(0, 0)),
+                ft.Column([
+                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD,
+                            color=COLORS["text"] if not locked else COLORS["text_secondary"]),
+                    ft.Text(subtitle, size=12, color=COLORS["text_secondary"]),
+                ], spacing=2, expand=True),
+                status,
+            ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=14, bgcolor=COLORS["surface"], border_radius=16,
+            shadow=SHADOWS["card"],
+            opacity=0.7 if (locked or coming) else 1.0,
+        )
+        # Hover-подсветка (отклик на десктопе; на мобилке безвредно не срабатывает)
+        row.on_hover = self._make_row_hover(row, color, locked or coming)
+        return row
+
+    def _make_row_hover(self, row, color, dim):
+        def h(e):
+            hovered = str(getattr(e, "data", "")).lower() == "true"
+            if dim:
+                row.border = None
+                row.shadow = SHADOWS["card"]
+            elif hovered:
+                row.border = ft.BorderSide(1, with_alpha(color, 0x70))
+                row.shadow = SHADOWS["elevated"]
+            else:
+                row.border = None
+                row.shadow = SHADOWS["card"]
+            self._page.update()
+        return h
+
+    # ------------------------------------------------------------------ #
+    # ДЕЙСТВИЕ: покупка (Free) / отмена (Premium)                         #
+    # ------------------------------------------------------------------ #
+    def _action_area(self):
+        if self.is_premium:
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text("Спасибо, что вы с нами 💜", size=15,
+                            color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+                    ft.Container(height=12),
+                    ft.OutlinedButton(
+                        "Отменить подписку",
+                        style=ft.ButtonStyle(side=ft.BorderSide(1.5, with_alpha(COLORS["error"], 0x66)),
+                                             color=COLORS["error"]),
+                        on_click=self._on_cancel, width=240, height=44),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                margin=ft.Margin(20, 8, 20, 0))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.ElevatedButton(
+                    "Оформить Premium",
+                    bgcolor=COLORS["primary"], color=COLORS["bg"],
+                    on_click=self._on_buy, width=260, height=52,
+                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=16))),
+                ft.Container(height=8),
+                ft.Text("Покупка появится в ближайшем обновлении",
+                        size=12, color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+            margin=ft.Margin(20, 8, 20, 0))
+
+    # ------------------------------------------------------------------ #
+    def _on_buy(self, e):
+        # Заглушка до интеграции RuStore Pay SDK / веб-покупки.
+        show_toast(self._page, "Покупка появится в следующем обновлении",
+                   ft.Icons.INFO_OUTLINE, COLORS["primary"], duration=3000)
+
+    def _on_cancel(self, e):
+        def build(close):
+            return [sheet_action(
+                ft.Icons.CHECK, "Да, отменить Premium",
+                lambda ev: (close(), self._do_cancel()))]
+        show_sheet(self._page, "Отменить Premium?", build)
+
+    def _do_cancel(self):
+        with SessionLocal() as db:
+            update_premium_status(db, False)
+        if self.on_premium_changed:
+            self.on_premium_changed(False)
+        self.refresh_data()
+        show_toast(self._page, "Premium отключён", ft.Icons.INFO_OUTLINE,
+                   COLORS["text_secondary"], duration=2500)
