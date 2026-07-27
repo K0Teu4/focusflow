@@ -31,16 +31,16 @@ def main(page: ft.Page):
     page.theme = get_theme()
     page.bgcolor = COLORS["bg"]
 
+    # === ТАЙМЕР (создаётся первым — нужен timer_service для focus_screen) ===
     timer_screen = TimerScreen(page)
 
+    # === CALLBACK'И (определяются до создания экранов, которые их используют) ===
     def on_focus_task(task_id: int, category: str):
         page.navigation_bar.selected_index = 0
         screen_container.controls.clear()
         screen_container.controls.append(timer_screen)
         timer_screen.focus_on_task(task_id, category)
         page.update()
-
-    tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
 
     def on_settings_changed(settings: dict):
         timer_screen.timer_service.reload_settings()
@@ -60,8 +60,7 @@ def main(page: ft.Page):
         page.update()
 
     def on_theme_changed(theme_name: str):
-        nonlocal timer_screen, tasks_screen, settings_screen, premium_screen, stats_screen
-
+        nonlocal timer_screen, tasks_screen, settings_screen, premium_screen, stats_screen, focus_screen
         set_theme(theme_name)
         page.theme_mode = get_flet_theme_mode(theme_name)
         page.theme = get_theme()
@@ -77,14 +76,11 @@ def main(page: ft.Page):
 
         timer_screen = TimerScreen(page, on_enter_focus=on_enter_focus, on_open_premium=on_open_premium)
         tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
-        settings_screen = SettingsScreen(
-            page,
-            on_settings_changed=on_settings_changed,
-            on_open_premium=on_open_premium,
-            on_theme_changed=on_theme_changed,
-        )
+        settings_screen = SettingsScreen(page, on_settings_changed=on_settings_changed,
+                                         on_open_premium=on_open_premium, on_theme_changed=on_theme_changed)
         premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
         stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
+        focus_screen = FocusScreen(page, timer_screen.timer_service, on_exit_focus, timer_screen)
 
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
@@ -92,19 +88,15 @@ def main(page: ft.Page):
         screen_container.controls.append(screens[index])
         page.update()
 
-    settings_screen = SettingsScreen(
-        page,
-        on_settings_changed=on_settings_changed,
-        on_open_premium=on_open_premium,
-        on_theme_changed=on_theme_changed,
-    )
+    # === ЭКРАНЫ (создаются после определения callback'ов) ===
+    tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
+    settings_screen = SettingsScreen(page, on_settings_changed=on_settings_changed,
+                                     on_open_premium=on_open_premium, on_theme_changed=on_theme_changed)
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
     stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
 
-    # === РЕЖИМ ФОКУС ===
+    # === РЕЖИМ ФОКУС (callback'и используют focus_screen через late binding) ===
     def on_enter_focus():
-        """Вход в полноэкранный режим Фокус: скрыть навбар, показать FocusScreen."""
-        # Передать текущую задачу в FocusScreen
         task_title = None
         if timer_screen.task_dropdown.value:
             for opt in timer_screen.task_dropdown.options:
@@ -112,7 +104,6 @@ def main(page: ft.Page):
                     task_title = opt.text
                     break
         focus_screen.set_task(task_title)
-
         page.navigation_bar.visible = False
         screen_container.controls.clear()
         focus_screen.start_ticking()
@@ -120,7 +111,6 @@ def main(page: ft.Page):
         page.update()
 
     def on_exit_focus():
-        """Выход из режима Фокус: показать навбар, вернуться на таймер."""
         focus_screen.stop_ticking()
         page.navigation_bar.visible = True
         screen_container.controls.clear()
@@ -128,12 +118,13 @@ def main(page: ft.Page):
         screen_container.controls.append(timer_screen)
         page.update()
 
-    focus_screen = FocusScreen(page, timer_screen.timer_service, on_exit_focus)
+    focus_screen = FocusScreen(page, timer_screen.timer_service, on_exit_focus, timer_screen)
 
-    # Привязать callback'и к timer_screen (после определения on_enter_focus/on_open_premium)
+    # Привязать callback'и к timer_screen
     timer_screen.on_enter_focus = on_enter_focus
     timer_screen.on_open_premium = on_open_premium
 
+    # === НАВИГАЦИЯ ===
     def on_nav_change(e):
         screen_container.controls.clear()
         index = page.navigation_bar.selected_index
@@ -155,39 +146,27 @@ def main(page: ft.Page):
         page.update()
 
     page.navigation_bar = ft.NavigationBar(
-        selected_index=0,
-        on_change=on_nav_change,
-        bgcolor=COLORS["surface"],
-        indicator_color=COLORS["primary"],
+        selected_index=0, on_change=on_nav_change,
+        bgcolor=COLORS["surface"], indicator_color=COLORS["primary"],
         destinations=[
             ft.NavigationBarDestination(
                 icon=ft.Icon(ft.Icons.TIMER, color=COLORS["text_secondary"]),
-                selected_icon=ft.Icon(ft.Icons.TIMER, color=COLORS["bg"]),
-                label="Таймер",
-            ),
+                selected_icon=ft.Icon(ft.Icons.TIMER, color=COLORS["bg"]), label="Таймер"),
             ft.NavigationBarDestination(
                 icon=ft.Icon(ft.Icons.CHECKLIST, color=COLORS["text_secondary"]),
-                selected_icon=ft.Icon(ft.Icons.CHECKLIST, color=COLORS["bg"]),
-                label="Задачи",
-            ),
+                selected_icon=ft.Icon(ft.Icons.CHECKLIST, color=COLORS["bg"]), label="Задачи"),
             ft.NavigationBarDestination(
                 icon=ft.Icon(ft.Icons.BAR_CHART, color=COLORS["text_secondary"]),
-                selected_icon=ft.Icon(ft.Icons.BAR_CHART, color=COLORS["bg"]),
-                label="Статистика",
-            ),
+                selected_icon=ft.Icon(ft.Icons.BAR_CHART, color=COLORS["bg"]), label="Статистика"),
             ft.NavigationBarDestination(
                 icon=ft.Icon(ft.Icons.SETTINGS, color=COLORS["text_secondary"]),
-                selected_icon=ft.Icon(ft.Icons.SETTINGS, color=COLORS["bg"]),
-                label="Настройки",
-            ),
+                selected_icon=ft.Icon(ft.Icons.SETTINGS, color=COLORS["bg"]), label="Настройки"),
             ft.NavigationBarDestination(
                 icon=ft.Icon(ft.Icons.STAR, color=COLORS["text_secondary"]),
-                selected_icon=ft.Icon(ft.Icons.STAR, color=COLORS["bg"]),
-                label="Premium",
-            ),
-        ],
-    )
+                selected_icon=ft.Icon(ft.Icons.STAR, color=COLORS["bg"]), label="Premium"),
+        ])
 
+    # === ОНБОРДИНГ / СТАРТ ===
     def on_onboarding_complete():
         with SessionLocal() as db:
             s = get_settings(db)

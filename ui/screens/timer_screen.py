@@ -12,14 +12,11 @@ from ui.toast import show_toast
 from ui.sheet import show_sheet, sheet_action
 
 
-class TimerScreen(ft.Column):
-    """Экран таймера Pomodoro: кольцо, управление, задача, автостарт, статистика-карточка, режим Фокус."""
+class TimerScreen(ft.Stack):
+    """Таймер Pomodoro. Stack = скроллируемый контент + угловая кнопка Фокуса поверх."""
 
     def __init__(self, page: ft.Page, on_focus_task=None, on_enter_focus=None, on_open_premium=None):
-        super().__init__(
-            spacing=0, expand=True, scroll=ft.ScrollMode.AUTO,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        super().__init__(expand=True)
         self._page = page
         self.timer_service = TimerService()
         self.timer_service._sound_service.bind_page(page)
@@ -29,20 +26,16 @@ class TimerScreen(ft.Column):
         self.on_enter_focus = on_enter_focus
         self.on_open_premium = on_open_premium
 
-        # Premium-статус для гейтинга режима Фокус
         with SessionLocal() as db:
-            user = get_user_state(db)
-            self.is_premium = user.is_premium
+            self.is_premium = get_user_state(db).is_premium
 
-        # === КРУГОВОЙ ПРОГРЕСС ===
+        # === КОЛЬЦО ===
         self.timer_bg = ft.Container(
             width=240, height=240, border_radius=120,
             gradient=GRADIENTS["work"],
             border=ft.BorderSide(2, with_alpha(COLORS["work"], 0x55)),
-            alignment=ft.Alignment(0, 0),
-            shadow=SHADOWS["elevated"],
-            scale=1.0,
-            animate=ft.Animation(180, ft.AnimationCurve.EASE_OUT),
+            alignment=ft.Alignment(0, 0), shadow=SHADOWS["elevated"],
+            scale=1.0, animate=ft.Animation(180, ft.AnimationCurve.EASE_OUT),
             content=ft.ProgressRing(
                 value=0.0, width=210, height=210, stroke_width=12,
                 color=COLORS["work"], bgcolor=COLORS["surface_2"],
@@ -53,21 +46,17 @@ class TimerScreen(ft.Column):
 
         self.session_type_text = ft.Text(
             self.timer_service.get_session_type_display(),
-            size=22, weight=ft.FontWeight.BOLD, color=COLORS["text"],
-        )
+            size=22, weight=ft.FontWeight.BOLD, color=COLORS["text"])
         self.progress_text = ft.Text(
             self._get_progress_display(), size=16,
-            color=COLORS["text_secondary"], margin=ft.Margin(0, 0, 0, 8),
-        )
+            color=COLORS["text_secondary"], margin=ft.Margin(0, 0, 0, 8))
         self.time_display = ft.Text(
             self.timer_service.get_display_time(), size=58,
             weight=ft.FontWeight.BOLD, color=COLORS["work"],
-            font_family="monospace", margin=ft.Margin(0, 0, 0, 8),
-        )
+            font_family="monospace", margin=ft.Margin(0, 0, 0, 8))
         self.current_task_text = ft.Text(
             "Без задачи", size=16, color=COLORS["text_secondary"],
-            italic=True, margin=ft.Margin(0, 0, 0, 4),
-        )
+            italic=True, margin=ft.Margin(0, 0, 0, 4))
 
         # === СЕЛЕКТОР ЗАДАЧИ ===
         self.select_task_button = ft.Container(
@@ -81,74 +70,44 @@ class TimerScreen(ft.Column):
             bgcolor=COLORS["surface_2"], border_radius=12,
             border=ft.BorderSide(1, with_alpha(COLORS["primary"], 0x66)),
             on_click=self._show_task_picker_dialog, ink=True,
-            width=260, margin=ft.Margin(0, 0, 0, 6),
-        )
+            width=260, margin=ft.Margin(0, 0, 0, 6))
 
         self.create_task_button = ft.TextButton(
-            "+ Новая задача",
-            style=ft.ButtonStyle(color=COLORS["primary"]),
-            on_click=self._show_create_task_dialog,
-            margin=ft.Margin(0, 0, 0, 18),
-        )
+            "+ Новая задача", style=ft.ButtonStyle(color=COLORS["primary"]),
+            on_click=self._show_create_task_dialog, margin=ft.Margin(0, 0, 0, 18))
 
         # === УПРАВЛЕНИЕ ===
         self.start_button = ft.ElevatedButton(
             "Старт", bgcolor=COLORS["primary"], color=COLORS["bg"],
-            on_click=self.on_start, width=140, height=48,
-        )
+            on_click=self.on_start, width=140, height=48)
         self.pause_button = ft.ElevatedButton(
             "Пауза", bgcolor=COLORS["pause_work"], color=COLORS["bg"],
-            on_click=self.on_pause, width=140, height=48, visible=False,
-        )
+            on_click=self.on_pause, width=140, height=48, visible=False)
         self.skip_button = ft.ElevatedButton(
             "Пропустить", bgcolor=COLORS["skip"], color=COLORS["bg"],
             on_click=self.on_skip, width=140, height=44,
-            visible=False, margin=ft.Margin(0, 8, 0, 0),
-        )
+            visible=False, margin=ft.Margin(0, 8, 0, 0))
         self.reset_button = ft.OutlinedButton(
             "Сброс",
-            style=ft.ButtonStyle(
-                side=ft.BorderSide(1.5, COLORS["reset_border"]),
-                color=COLORS["text_secondary"],
-            ),
-            on_click=self.on_reset, width=110, height=38, margin=ft.Margin(0, 12, 0, 0),
-        )
-
-        # === РЕЖИМ ФОКУС (Premium-гейтинг) ===
-        self.focus_button = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.Icons.FULLSCREEN if self.is_premium else ft.Icons.LOCK,
-                        size=18, color=COLORS["primary"]),
-                ft.Text("Режим Фокус", size=14, color=COLORS["text"],
-                        weight=ft.FontWeight.W_600),
-            ], spacing=8, alignment=ft.MainAxisAlignment.CENTER),
-            padding=ft.padding.Padding(14, 10, 14, 10),
-            bgcolor=COLORS["surface_2"], border_radius=12,
-            border=ft.BorderSide(1, with_alpha(COLORS["primary"], 0x66)),
-            on_click=self._on_focus_click, ink=True,
-            opacity=0.6 if not self.is_premium else 1.0,
-            width=260, margin=ft.Margin(0, 12, 0, 0),
-        )
+            style=ft.ButtonStyle(side=ft.BorderSide(1.5, COLORS["reset_border"]),
+                                 color=COLORS["text_secondary"]),
+            on_click=self.on_reset, width=110, height=38, margin=ft.Margin(0, 12, 0, 0))
 
         # === АВТОСТАРТ ===
         self.auto_start_bar = ft.ProgressBar(
             value=0.0, color=COLORS["primary"], bgcolor=COLORS["surface_2"],
-            width=200, visible=False,
-        )
+            width=200, visible=False)
         self.auto_start_text = ft.Text(
             "", size=16, color=COLORS["primary"], weight=ft.FontWeight.W_600,
-            visible=False, margin=ft.Margin(0, 8, 0, 0),
-        )
+            visible=False, margin=ft.Margin(0, 8, 0, 0))
         self.cancel_auto_btn = ft.TextButton(
             "Отмена", style=ft.ButtonStyle(color=COLORS["text_secondary"]),
-            on_click=self.on_cancel_auto_start, visible=False,
-        )
+            on_click=self.on_cancel_auto_start, visible=False)
 
         self.task_dropdown = ft.Dropdown(
             label="Задача", hint_text="Выбрать задачу", width=280,
             border_color=COLORS["primary"], color=COLORS["text"],
-            bgcolor=COLORS["surface"], visible=False,
-        )
+            bgcolor=COLORS["surface"], visible=False)
         self.task_dropdown.on_change = self.on_task_change
 
         # === СТАТИСТИКА-КАРТОЧКА ===
@@ -156,35 +115,52 @@ class TimerScreen(ft.Column):
         self.stat_minutes_text = ft.Text("0", size=24, weight=ft.FontWeight.BOLD, color=COLORS["primary"])
         self.stats_card = ft.Container(
             content=ft.Row([
-                ft.Column([
-                    self.stat_sessions_text,
-                    ft.Text("🍅 сессий", size=12, color=COLORS["text_secondary"]),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                ft.Column([self.stat_sessions_text,
+                           ft.Text("🍅 сессий", size=12, color=COLORS["text_secondary"])],
+                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
                 ft.Container(width=1, height=34, bgcolor=with_alpha(COLORS["text_secondary"], 0x40)),
-                ft.Column([
-                    self.stat_minutes_text,
-                    ft.Text("минут", size=12, color=COLORS["text_secondary"]),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                ft.Column([self.stat_minutes_text,
+                           ft.Text("минут", size=12, color=COLORS["text_secondary"])],
+                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
             ], alignment=ft.MainAxisAlignment.SPACE_EVENLY,
                vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.Padding(20, 14, 20, 14),
             bgcolor=COLORS["surface"], border_radius=16,
-            shadow=SHADOWS["card"], width=260, margin=ft.Margin(0, 16, 0, 24),
+            shadow=SHADOWS["card"], width=260, margin=ft.Margin(0, 16, 0, 24))
+
+        # === СКРОЛЛИРУЕМЫЙ КОНТЕНТ (без кнопки Фокуса в потоке) ===
+        self.content_column = ft.Column(
+            spacing=0, expand=True, scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(height=8),  # отступ под угловую кнопку
+                self.timer_bg, self.session_type_text, self.progress_text, self.time_display,
+                self.current_task_text, self.select_task_button, self.create_task_button,
+                self.task_dropdown,
+                ft.Row([self.start_button, self.pause_button],
+                       alignment=ft.MainAxisAlignment.CENTER, spacing=12),
+                self.skip_button, self.auto_start_text, self.auto_start_bar, self.cancel_auto_btn,
+                self.reset_button, self.stats_card,
+            ])
+
+        # === УГЛОВАЯ КНОПКА ФОКУСА (поверх, не сдвигает круг) ===
+        self.focus_icon = ft.Container(
+            top=12, right=12, width=44, height=44, border_radius=22,
+            bgcolor=with_alpha(COLORS["surface"], 0xCC),
+            alignment=ft.Alignment(0, 0),
+            content=ft.Icon(
+                ft.Icons.FULLSCREEN if self.is_premium else ft.Icons.LOCK_OUTLINE,
+                color=COLORS["primary"] if self.is_premium else COLORS["text_secondary"],
+                size=22),
+            on_click=self._on_focus_click, ink=True,
+            tooltip="Режим Фокус" if self.is_premium else "Режим Фокус (Premium)",
+            opacity=1.0 if self.is_premium else 0.55,
         )
 
-        self.controls = [
-            self.timer_bg, self.session_type_text, self.progress_text, self.time_display,
-            self.current_task_text, self.select_task_button, self.create_task_button,
-            self.task_dropdown,
-            ft.Row([self.start_button, self.pause_button], alignment=ft.MainAxisAlignment.CENTER, spacing=12),
-            self.skip_button, self.auto_start_text, self.auto_start_bar, self.cancel_auto_btn,
-            self.reset_button, self.focus_button, self.stats_card,
-        ]
+        self.controls = [self.content_column, self.focus_icon]
         self.load_tasks()
         self.update_stats()
 
-    # ------------------------------------------------------------------ #
-    # РЕЖИМ ФОКУС                                                         #
     # ------------------------------------------------------------------ #
     def _on_focus_click(self, e):
         if not self.is_premium:
@@ -194,23 +170,15 @@ class TimerScreen(ft.Column):
         if self.on_enter_focus:
             self.on_enter_focus()
 
-    # ------------------------------------------------------------------ #
-    # ПУЛЬСАЦИЯ КРУГА                                                     #
-    # ------------------------------------------------------------------ #
     def _pulse(self):
         self.timer_bg.scale = 1.06
         self._page.update()
-
         async def back():
             await asyncio.sleep(0.18)
             self.timer_bg.scale = 1.0
             self._page.update()
-
         asyncio.create_task(back())
 
-    # ------------------------------------------------------------------ #
-    # ВСПОМОГАТЕЛЬНЫЕ ОТОБРАЖЕНИЯ                                         #
-    # ------------------------------------------------------------------ #
     def _get_progress_display(self) -> str:
         return f"Сессия {self.timer_service.completed_work_sessions} из {self.timer_service.sessions_until_long_break}"
 
@@ -221,9 +189,6 @@ class TimerScreen(ft.Column):
         self.auto_start_bar.visible = False
         self.cancel_auto_btn.visible = False
 
-    # ------------------------------------------------------------------ #
-    # ОБНОВЛЕНИЕ ДАННЫХ                                                   #
-    # ------------------------------------------------------------------ #
     def refresh_data(self):
         self.timer_service.reload_settings()
         self.load_tasks()
@@ -240,8 +205,7 @@ class TimerScreen(ft.Column):
         with SessionLocal() as db:
             tasks = get_tasks(db)
             self.task_dropdown.options = [
-                ft.dropdown.Option(key=str(t.id), text=t.title, data=t.category) for t in tasks
-            ]
+                ft.dropdown.Option(key=str(t.id), text=t.title, data=t.category) for t in tasks]
         self._page.update()
 
     def update_stats(self):
@@ -263,27 +227,20 @@ class TimerScreen(ft.Column):
         self.current_task_text.color = COLORS["text_secondary"]
         self.current_task_text.italic = True
 
-    # ------------------------------------------------------------------ #
-    # ВЫБОР ЗАДАЧИ (bottom-sheet)                                         #
-    # ------------------------------------------------------------------ #
     def _show_task_picker_dialog(self, e):
         with SessionLocal() as db:
             tasks = get_tasks(db)
-
         def build(close):
             rows = []
             if not tasks:
                 rows.append(sheet_action(
                     ft.Icons.ADD_CIRCLE, "Создать задачу",
-                    lambda ev: (close(), self._show_create_task_dialog(ev)),
-                ))
+                    lambda ev: (close(), self._show_create_task_dialog(ev))))
                 return rows
             for task in tasks:
-                cat_color = {
-                    "work": COLORS["cat_work"], "rest": COLORS["cat_rest"],
-                    "hobby": COLORS["cat_hobby"], "study": COLORS["cat_study"],
-                }.get(task.category, COLORS["cat_work"])
-
+                cat_color = {"work": COLORS["cat_work"], "rest": COLORS["cat_rest"],
+                             "hobby": COLORS["cat_hobby"], "study": COLORS["cat_study"]}.get(
+                    task.category, COLORS["cat_work"])
                 def pick(tid):
                     def handler(ev):
                         self.task_dropdown.value = str(tid)
@@ -291,16 +248,10 @@ class TimerScreen(ft.Column):
                         self._update_current_task_text()
                         close()
                     return handler
-
-                rows.append(sheet_action(
-                    ft.Icons.CIRCLE, task.title, pick(task.id), icon_color=cat_color,
-                ))
-            rows.append(sheet_action(
-                ft.Icons.CLEAR_ALL, "Убрать задачу",
-                lambda ev: (self._clear_task(), close()),
-            ))
+                rows.append(sheet_action(ft.Icons.CIRCLE, task.title, pick(task.id), icon_color=cat_color))
+            rows.append(sheet_action(ft.Icons.CLEAR_ALL, "Убрать задачу",
+                                     lambda ev: (self._clear_task(), close())))
             return rows
-
         show_sheet(self._page, "Задача для фокуса", build)
 
     def _clear_task(self):
@@ -314,9 +265,7 @@ class TimerScreen(ft.Column):
         chosen = {"cat": "work"}
         title_field = ft.TextField(
             label="Название задачи", autofocus=True,
-            border_color=COLORS["primary"], color=COLORS["text"], bgcolor=COLORS["surface"],
-        )
-
+            border_color=COLORS["primary"], color=COLORS["text"], bgcolor=COLORS["surface"])
         def chip(key, label):
             color = {"work": COLORS["cat_work"], "rest": COLORS["cat_rest"],
                      "hobby": COLORS["cat_hobby"], "study": COLORS["cat_study"]}[key]
@@ -326,20 +275,14 @@ class TimerScreen(ft.Column):
                                 color=COLORS["bg"] if sel else color),
                 bgcolor=color if sel else COLORS["surface"],
                 border_radius=14, padding=ft.padding.Padding(10, 6, 10, 6), ink=True,
-                border=ft.BorderSide(1.5, color) if not sel else None,
-            )
-
+                border=ft.BorderSide(1.5, color) if not sel else None)
             def set_cat(ev):
                 chosen["cat"] = key
                 cat_row.controls = [chip(k, l) for k, l in CATEGORIES.items()]
                 dialog.update()
-
             c.on_click = set_cat
             return c
-
-        cat_row = ft.Row([chip(k, l) for k, l in CATEGORIES.items()],
-                         spacing=8, scroll=ft.ScrollMode.AUTO)
-
+        cat_row = ft.Row([chip(k, l) for k, l in CATEGORIES.items()], spacing=8, scroll=ft.ScrollMode.AUTO)
         def save(ev):
             t = (title_field.value or "").strip()
             if not t:
@@ -352,30 +295,20 @@ class TimerScreen(ft.Column):
             self.task_dropdown.value = str(new.id)
             self._update_session_label_from_dropdown()
             self._update_current_task_text()
-            show_toast(self._page, f"Создано: {t}", ft.Icons.ADD_TASK,
-                       COLORS["success"], duration=2500)
-
+            show_toast(self._page, f"Создано: {t}", ft.Icons.ADD_TASK, COLORS["success"], duration=2500)
         title_field.on_submit = save
         dialog = ft.AlertDialog(
             title=ft.Text("Новая задача"),
-            content=ft.Column([
-                title_field, ft.Container(height=6),
-                ft.Text("Категория", size=13, color=COLORS["text_secondary"]),
-                cat_row,
-            ], spacing=6, tight=True),
-            actions=[
-                ft.TextButton("Отмена", on_click=lambda ev: self._close_dialog(dialog)),
-                ft.TextButton("Создать", on_click=save),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
+            content=ft.Column([title_field, ft.Container(height=6),
+                               ft.Text("Категория", size=13, color=COLORS["text_secondary"]), cat_row],
+                              spacing=6, tight=True),
+            actions=[ft.TextButton("Отмена", on_click=lambda ev: self._close_dialog(dialog)),
+                     ft.TextButton("Создать", on_click=save)],
+            actions_alignment=ft.MainAxisAlignment.END)
         self._page.overlay.append(dialog)
         dialog.open = True
         self._page.update()
 
-    # ------------------------------------------------------------------ #
-    # ЦВЕТА РЕЖИМА                                                        #
-    # ------------------------------------------------------------------ #
     def _apply_mode_colors(self):
         mode = self.timer_service.get_mode_key()
         if mode == "work":
@@ -384,14 +317,12 @@ class TimerScreen(ft.Column):
             ring_color, gradient, pause_color = COLORS["long_break"], GRADIENTS["long_break"], COLORS["pause_rest"]
         else:
             ring_color, gradient, pause_color = COLORS["rest"], GRADIENTS["rest"], COLORS["pause_rest"]
-
         self.progress_ring.color = ring_color
         self.timer_bg.gradient = gradient
         self.timer_bg.border = ft.BorderSide(2, with_alpha(ring_color, 0x55))
         self.time_display.color = ring_color
         self.pause_button.bgcolor = pause_color
         self._apply_reset_style()
-
         is_rest = not self.timer_service.is_work_session
         self.select_task_button.visible = not is_rest
         self.create_task_button.visible = not is_rest
@@ -414,16 +345,11 @@ class TimerScreen(ft.Column):
     def _apply_reset_style(self):
         if self.timer_service.is_running:
             self.reset_button.style = ft.ButtonStyle(
-                side=ft.BorderSide(1.5, COLORS["error"]), color=COLORS["error"],
-            )
+                side=ft.BorderSide(1.5, COLORS["error"]), color=COLORS["error"])
         else:
             self.reset_button.style = ft.ButtonStyle(
-                side=ft.BorderSide(1.5, COLORS["reset_border"]), color=COLORS["text_secondary"],
-            )
+                side=ft.BorderSide(1.5, COLORS["reset_border"]), color=COLORS["text_secondary"])
 
-    # ------------------------------------------------------------------ #
-    # ПРОГРЕСС И КНОПКИ                                                   #
-    # ------------------------------------------------------------------ #
     def _update_progress(self):
         total = self.timer_service._get_current_target_sec()
         self.progress_ring.value = (total - self.timer_service.current_sec) / total if total > 0 else 0.0
@@ -441,9 +367,6 @@ class TimerScreen(ft.Column):
             icon = ft.Icons.INFO_OUTLINE
         show_toast(self._page, message, icon, color)
 
-    # ------------------------------------------------------------------ #
-    # ЦИКЛ ТАЙМЕРА                                                        #
-    # ------------------------------------------------------------------ #
     def update_timer_display(self):
         self.time_display.value = self.timer_service.get_display_time()
         self.session_type_text.value = self.timer_service.get_session_type_display()
@@ -477,7 +400,6 @@ class TimerScreen(ft.Column):
         self.auto_start_bar.visible = True
         self.cancel_auto_btn.visible = True
         self._page.update()
-
         async def countdown():
             try:
                 for i in range(delay, 0, -1):
@@ -495,7 +417,6 @@ class TimerScreen(ft.Column):
                 self.on_start(None)
             except asyncio.CancelledError:
                 pass
-
         self._auto_start_task = asyncio.create_task(countdown())
 
     def on_cancel_auto_start(self, e):
@@ -504,9 +425,6 @@ class TimerScreen(ft.Column):
         self.pause_button.visible = False
         self._page.update()
 
-    # ------------------------------------------------------------------ #
-    # ВЫБОР ЗАДАЧИ И РЕЖИМА                                               #
-    # ------------------------------------------------------------------ #
     def on_task_change(self, e):
         self._update_session_label_from_dropdown()
         self._update_current_task_text()
@@ -526,9 +444,6 @@ class TimerScreen(ft.Column):
         self.session_type_text.value = self.timer_service.get_session_type_display()
         self._apply_mode_colors()
 
-    # ------------------------------------------------------------------ #
-    # ФОКУС НА ЗАДАЧЕ ИЗ СПИСКА                                           #
-    # ------------------------------------------------------------------ #
     def focus_on_task(self, task_id: int, category: str):
         if self.timer_service.is_running:
             def on_confirm(e):
@@ -536,20 +451,15 @@ class TimerScreen(ft.Column):
                 self._page.update()
                 asyncio.create_task(self.timer_service.pause())
                 self._do_focus_on_task(task_id, category)
-
             def on_cancel(e):
                 dialog.open = False
                 self._page.update()
-
             dialog = ft.AlertDialog(
                 title=ft.Text("Таймер уже запущен"),
                 content=ft.Text("Остановить и начать новую задачу?"),
-                actions=[
-                    ft.TextButton("Отмена", on_click=on_cancel),
-                    ft.TextButton("Начать", on_click=on_confirm),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            )
+                actions=[ft.TextButton("Отмена", on_click=on_cancel),
+                         ft.TextButton("Начать", on_click=on_confirm)],
+                actions_alignment=ft.MainAxisAlignment.END)
             self._page.overlay.append(dialog)
             dialog.open = True
             self._page.update()
@@ -568,9 +478,6 @@ class TimerScreen(ft.Column):
         self.on_start(None)
         self._page.update()
 
-    # ------------------------------------------------------------------ #
-    # УПРАВЛЕНИЕ: СТАРТ / ПАУЗА / ПРОПУСК / СБРОС                         #
-    # ------------------------------------------------------------------ #
     def on_start(self, e):
         self._cancel_auto_start_countdown()
         task_id = int(self.task_dropdown.value) if self.task_dropdown.value else None
@@ -581,8 +488,7 @@ class TimerScreen(ft.Column):
         self._pulse()
         self._page.update()
         asyncio.create_task(
-            self.timer_service.start(self.update_timer_display, task_id, sound_enabled=True)
-        )
+            self.timer_service.start(self.update_timer_display, task_id, sound_enabled=True))
 
     def on_pause(self, e):
         self._cancel_auto_start_countdown()
@@ -595,7 +501,6 @@ class TimerScreen(ft.Column):
 
     def on_skip(self, e):
         self._cancel_auto_start_countdown()
-
         async def do_skip():
             await self.timer_service.pause()
             elapsed = self.timer_service.skip_and_save()
@@ -608,7 +513,6 @@ class TimerScreen(ft.Column):
             else:
                 self._show_snackbar("⏭ Сессия пропущена", COLORS["skip"])
             self._page.update()
-
         asyncio.create_task(do_skip())
 
     def on_reset(self, e):
@@ -621,9 +525,6 @@ class TimerScreen(ft.Column):
         self.update_timer_display()
         self.update_stats()
 
-    # ------------------------------------------------------------------ #
-    # УТИЛИТЫ                                                             #
-    # ------------------------------------------------------------------ #
     def _close_dialog(self, dialog):
         dialog.open = False
         self._page.update()
