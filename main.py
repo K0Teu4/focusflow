@@ -7,6 +7,7 @@ from ui.screens.settings_screen import SettingsScreen
 from ui.screens.premium_screen import PremiumScreen
 from ui.screens.stats_screen import StatsScreen
 from ui.screens.onboarding_screen import OnboardingScreen
+from ui.screens.focus_screen import FocusScreen
 from db.database import SessionLocal, get_settings, update_settings
 
 
@@ -74,7 +75,7 @@ def main(page: ft.Page):
                 dest.selected_icon.color = COLORS["bg"]
         page.update()
 
-        timer_screen = TimerScreen(page)
+        timer_screen = TimerScreen(page, on_enter_focus=on_enter_focus, on_open_premium=on_open_premium)
         tasks_screen = TasksScreen(page, on_focus_task=on_focus_task)
         settings_screen = SettingsScreen(
             page,
@@ -99,6 +100,39 @@ def main(page: ft.Page):
     )
     premium_screen = PremiumScreen(page, on_premium_changed=on_premium_changed)
     stats_screen = StatsScreen(page, on_open_premium=on_open_premium)
+
+    # === РЕЖИМ ФОКУС ===
+    def on_enter_focus():
+        """Вход в полноэкранный режим Фокус: скрыть навбар, показать FocusScreen."""
+        # Передать текущую задачу в FocusScreen
+        task_title = None
+        if timer_screen.task_dropdown.value:
+            for opt in timer_screen.task_dropdown.options:
+                if opt.key == timer_screen.task_dropdown.value:
+                    task_title = opt.text
+                    break
+        focus_screen.set_task(task_title)
+
+        page.navigation_bar.visible = False
+        screen_container.controls.clear()
+        focus_screen.start_ticking()
+        screen_container.controls.append(focus_screen)
+        page.update()
+
+    def on_exit_focus():
+        """Выход из режима Фокус: показать навбар, вернуться на таймер."""
+        focus_screen.stop_ticking()
+        page.navigation_bar.visible = True
+        screen_container.controls.clear()
+        timer_screen.refresh_data()
+        screen_container.controls.append(timer_screen)
+        page.update()
+
+    focus_screen = FocusScreen(page, timer_screen.timer_service, on_exit_focus)
+
+    # Привязать callback'и к timer_screen (после определения on_enter_focus/on_open_premium)
+    timer_screen.on_enter_focus = on_enter_focus
+    timer_screen.on_open_premium = on_open_premium
 
     def on_nav_change(e):
         screen_container.controls.clear()
