@@ -2,21 +2,21 @@
 import flet as ft
 from db.database import SessionLocal, get_settings, update_settings, get_user_state
 from services.sound_service import SoundService, SOUNDS
-from ui.theme import COLORS, with_alpha
+from ui.theme import (
+    COLORS, with_alpha, get_theme_names, get_theme_display_name,
+    is_premium_theme, THEMES,
+)
 from ui.sheet import show_sheet, sheet_action
 
-# Фиксированные ширины правой сетки длительности — поле «сессий» встаёт
-# пиксель-в-пиксель под полем секунд в строках работа/отдых/перерыв.
-_F_W = 56   # числовое поле
-_U_W = 26   # ячейка единицы (мин/сек)
-_SP = 6     # spacing правой сетки
-# Равный горизонтальный padding БОЛЬШЕ системного минимума-инсета TextField:
-# это гарантирует симметрию edit-area и истинное центрирование цифр.
+# Фиксированные ширины правой сетки длительности
+_F_W = 56
+_U_W = 26
+_SP = 6
 _PAD = ft.padding.Padding(10, 12, 10, 12)
 
 
 class SettingsScreen(ft.Column):
-    """Настройки: длительность (выровнено), поведение, оформление, premium."""
+    """Настройки: длительность, поведение, темы (Free 2 / Premium 6), premium-статус."""
 
     def __init__(self, page: ft.Page, on_settings_changed=None, on_open_premium=None, on_theme_changed=None):
         super().__init__(spacing=15, expand=True, scroll=ft.ScrollMode.AUTO)
@@ -32,6 +32,7 @@ class SettingsScreen(ft.Column):
             user_state = get_user_state(db)
             self.is_premium = user_state.is_premium
             self.premium_expires = user_state.premium_expires_at
+            self._current_theme = settings.get("theme", "dark")
 
         def auto_save(e=None):
             self._save_current_values()
@@ -69,8 +70,6 @@ class SettingsScreen(ft.Column):
         self.long_break_min_field, self.long_break_sec_field, long_break_row = make_time_row(
             "Длинный перерыв", int(settings.get("long_break_min", 15)), int(settings.get("long_break_sec", 0)))
 
-        # Поле «сессий» в ту же правую сетку на позицию поля секунд
-        # (слоты справа: [поле][единица][ПОЛЕ СЕССИЙ][единица]).
         self.sessions_until_long_break_field = ft.TextField(
             value=str(settings.get("sessions_until_long_break", 4)),
             keyboard_type=ft.KeyboardType.NUMBER,
@@ -127,14 +126,6 @@ class SettingsScreen(ft.Column):
             ft.Text("Задержка автостарта", size=14, color=COLORS["text"], weight=ft.FontWeight.W_500, expand=True),
             self.auto_start_delay_field, unit("сек"),
         ], spacing=_SP, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-
-        # === ОФОРМЛЕНИЕ ===
-        current_theme = settings.get("theme", "dark")
-        self.theme_switch = ft.Switch(
-            label="Тёмная тема", value=(current_theme == "dark"),
-            active_color=COLORS["primary"], inactive_thumb_color=COLORS["text_secondary"],
-            on_change=self._on_theme_change, label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
-        )
 
         # === PREMIUM-СТАТУС ===
         if self.is_premium:
@@ -197,13 +188,7 @@ class SettingsScreen(ft.Column):
                 ], spacing=8),
                 padding=20, bgcolor=COLORS["surface"], border_radius=16, margin=ft.Margin(20, 0, 20, 0),
             ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("Оформление", size=18, color=COLORS["text"]),
-                    ft.Container(height=8), self.theme_switch,
-                ], spacing=8),
-                padding=20, bgcolor=COLORS["surface"], border_radius=16, margin=ft.Margin(20, 0, 20, 0),
-            ),
+            self._build_theme_section(),
             ft.Container(
                 content=ft.Column([
                     ft.Row([ft.Text("Premium функции", size=18, color=COLORS["text"]), self._create_pro_badge()], spacing=8),
@@ -218,14 +203,88 @@ class SettingsScreen(ft.Column):
     def refresh_data(self):
         self.__init__(self._page, self.on_settings_changed, self.on_open_premium, self.on_theme_changed)
 
+    # ------------------------------------------------------------------ #
+    # ТЕМЫ: сетка 2×3 с превью, Free 2 / Premium 6                        #
+    # ------------------------------------------------------------------ #
+    def _build_theme_section(self):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("Оформление", size=18, color=COLORS["text"]),
+                    ft.Container(
+                        content=ft.Text("PRO", size=10, weight=ft.FontWeight.BOLD, color=COLORS["bg"]),
+                        bgcolor=COLORS["primary"], border_radius=4,
+                        padding=ft.padding.Padding(6, 2, 6, 2),
+                    ),
+                ], spacing=8),
+                ft.Container(height=12),
+                self._build_theme_grid(),
+            ], spacing=0),
+            padding=20, bgcolor=COLORS["surface"], border_radius=16, margin=ft.Margin(20, 0, 20, 0),
+        )
+
+    def _build_theme_grid(self):
+        names = get_theme_names()
+        rows = []
+        for i in range(0, len(names), 2):
+            pair = names[i:i + 2]
+            rows.append(ft.Row([self._theme_card(n) for n in pair], spacing=10))
+        return ft.Column(rows, spacing=10)
+
+    def _theme_card(self, name):
+        theme = THEMES[name]
+        c = theme["colors"]
+        is_selected = name == self._current_theme
+        is_premium = is_premium_theme(name)
+        locked = is_premium and not self.is_premium
+
+        # Превью: три кружка (bg, primary, work) + имя
+        preview = ft.Row([
+            ft.Container(width=18, height=18, border_radius=9, bgcolor=c["bg"],
+                         border=ft.BorderSide(1, with_alpha(COLORS["text_secondary"], 0x55))),
+            ft.Container(width=18, height=18, border_radius=9, bgcolor=c["primary"]),
+            ft.Container(width=18, height=18, border_radius=9, bgcolor=c["work"]),
+        ], spacing=6)
+
+        label_row = ft.Row([
+            ft.Text(get_theme_display_name(name), size=13,
+                    weight=ft.FontWeight.BOLD if is_selected else ft.FontWeight.NORMAL,
+                    color=COLORS["text"], expand=True),
+            ft.Icon(ft.Icons.CHECK_CIRCLE if is_selected else
+                    (ft.Icons.LOCK if locked else ft.Icons.CIRCLE_OUTLINED),
+                    size=18,
+                    color=COLORS["primary"] if is_selected else
+                          (COLORS["text_secondary"] if locked else COLORS["text_secondary"])),
+        ], spacing=6)
+
+        def on_click(e):
+            if locked:
+                self._navigate_to_premium()
+                return
+            self._current_theme = name
+            with SessionLocal() as db:
+                s = get_settings(db)
+                s["theme"] = name
+                update_settings(db, s)
+            if self.on_theme_changed:
+                self.on_theme_changed(name)
+            self.refresh_data()
+
+        return ft.Container(
+            content=ft.Column([preview, ft.Container(height=8), label_row], spacing=0),
+            padding=14, expand=True,
+            bgcolor=COLORS["surface_2"] if is_selected else COLORS["bg"],
+            border_radius=14,
+            border=ft.BorderSide(2, COLORS["primary"]) if is_selected else
+                  ft.BorderSide(1, with_alpha(COLORS["text_secondary"], 0x30)),
+            on_click=on_click, ink=True,
+            opacity=0.6 if locked else 1.0,
+        )
+
+    # ------------------------------------------------------------------ #
     def _on_theme_change(self, e):
-        theme_name = "dark" if self.theme_switch.value else "light"
-        with SessionLocal() as db:
-            settings = get_settings(db)
-            settings["theme"] = theme_name
-            update_settings(db, settings)
-        if self.on_theme_changed:
-            self.on_theme_changed(theme_name)
+        # Не используется (заменён на _theme_card.on_click), оставлен для совместимости
+        pass
 
     def _create_pro_badge(self):
         return ft.Container(
@@ -341,7 +400,7 @@ class SettingsScreen(ft.Column):
                 "auto_start": self.auto_start_checkbox.value,
                 "auto_start_delay": delay,
                 "sound_type": self._get_current_sound_type(),
-                "theme": "dark" if self.theme_switch.value else "light",
+                "theme": self._current_theme,
             }
             with SessionLocal() as db:
                 update_settings(db, settings)

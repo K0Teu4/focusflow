@@ -12,8 +12,6 @@ from db.database import SessionLocal, get_settings, update_settings
 
 def main(page: ft.Page):
     page.title = "FocusFlow"
-    # Телефонные пропорции на десктопе: окно не растягивается в простыню,
-    # контент всегда остаётся в мобильной ширине по центру.
     page.window.width = 440
     page.window.height = 820
     page.window.min_width = 380
@@ -31,7 +29,6 @@ def main(page: ft.Page):
     page.theme_mode = get_flet_theme_mode(initial_theme)
     page.theme = get_theme()
     page.bgcolor = COLORS["bg"]
-    # AppBar убран намеренно — бренд-заголовок занимал место на каждом экране.
 
     timer_screen = TimerScreen(page)
 
