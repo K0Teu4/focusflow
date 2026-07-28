@@ -182,6 +182,9 @@ THEMES = {
 # =========================================================================== #
 # МУТИРУЕМЫЕ СЛОВАРИ ТЕКУЩЕЙ ТЕМЫ (все импорты COLORS/GRADIENTS смотрят сюда) #
 # =========================================================================== #
+# Алиасы для обратной совместимости (тесты)
+DARK_COLORS = THEMES["dark"]["colors"]
+LIGHT_COLORS = THEMES["light"]["colors"]
 COLORS = THEMES["dark"]["colors"].copy()
 GRADIENTS = {
     k: ft.LinearGradient(begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1), colors=v)

@@ -1,7 +1,8 @@
 # ui/screens/settings_screen.py
 import asyncio
 import flet as ft
-from db.database import SessionLocal, get_settings, update_settings, get_user_state
+from db.database import SessionLocal, get_settings, update_settings
+from services.premium_service import PremiumService
 from services.sound_service import SoundService, SOUNDS
 from ui.theme import (
     COLORS, with_alpha, get_theme_names, get_theme_display_name,
@@ -28,7 +29,6 @@ class SettingsScreen(ft.Column):
         self.sound_service = SoundService()
         self.sound_service.bind_page(page)
 
-        # Подключаем on_scroll присваиванием (безопасно: не крашит, если свойства нет)
         try:
             self.on_scroll = self._on_scroll
         except Exception:
@@ -36,10 +36,11 @@ class SettingsScreen(ft.Column):
 
         with SessionLocal() as db:
             settings = get_settings(db)
-            user_state = get_user_state(db)
-            self.is_premium = user_state.is_premium
-            self.premium_expires = user_state.premium_expires_at
             self._current_theme = settings.get("theme", "dark")
+
+        _pst = PremiumService.get_status()
+        self.is_premium = _pst["is_premium"]
+        self.premium_expires = _pst["expires_at"]
 
         def auto_save(e=None):
             self._save_current_values()
@@ -98,7 +99,6 @@ class SettingsScreen(ft.Column):
             on_change=auto_save, label_text_style=ft.TextStyle(size=14, color=COLORS["text"]),
         )
 
-        # Кнопка звука пересобирается из БД — выбранное имя всегда актуально.
         self.sound_row = ft.Column([
             ft.Text("Звук уведомления", size=14, color=COLORS["text"], weight=ft.FontWeight.W_500),
             self._build_sound_button(),
@@ -152,7 +152,7 @@ class SettingsScreen(ft.Column):
                 border=ft.BorderSide(1.5, COLORS["primary"]), margin=ft.Margin(20, 0, 20, 0),
             )
 
-        # === СБОРКА (блок «Premium функции / замок» убран — темы гейтятся в «Оформлении») ===
+        # === СБОРКА ===
         self.controls = [
             ft.Container(
                 content=ft.Column([
@@ -186,7 +186,6 @@ class SettingsScreen(ft.Column):
             ft.Container(height=40),
         ]
 
-        # Восстановление позиции скролла (после смены темы / возврата на вкладку)
         pos = getattr(page, "_ff_settings_scroll", 0.0)
         if pos and pos > 0:
             try:
@@ -194,8 +193,6 @@ class SettingsScreen(ft.Column):
             except Exception:
                 pass
 
-    # ------------------------------------------------------------------ #
-    # СКРОЛЛ: сохранение / восстановление                                 #
     # ------------------------------------------------------------------ #
     def _on_scroll(self, e):
         try:
@@ -214,8 +211,6 @@ class SettingsScreen(ft.Column):
         self.__init__(self._page, self.on_settings_changed, self.on_open_premium, self.on_theme_changed)
 
     # ------------------------------------------------------------------ #
-    # ЗВУК: пересборка кнопки из БД                                       #
-    # ------------------------------------------------------------------ #
     def _build_sound_button(self):
         with SessionLocal() as db:
             cur = get_settings(db).get("sound_type", "bell")
@@ -233,11 +228,8 @@ class SettingsScreen(ft.Column):
         )
 
     def _refresh_sound_button(self):
-        """Подменить кнопку звука в sound_row свежей (после выбора)."""
         self.sound_row.controls[1] = self._build_sound_button()
 
-    # ------------------------------------------------------------------ #
-    # ТЕМЫ: сетка 2×3 с превью, Free 2 / Premium 6                        #
     # ------------------------------------------------------------------ #
     def _build_theme_section(self):
         return ft.Container(
@@ -356,7 +348,6 @@ class SettingsScreen(ft.Column):
             settings = get_settings(db)
             settings["sound_type"] = sound_id
             update_settings(db, settings)
-        # Пересобираем кнопку — имя гарантированно обновится на экране.
         self._refresh_sound_button()
         self._page.update()
         if self.on_settings_changed:

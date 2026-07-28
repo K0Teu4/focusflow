@@ -4,8 +4,9 @@ import asyncio
 from services.timer_service import TimerService
 from db.database import (
     SessionLocal, get_tasks, get_today_stats, get_settings,
-    get_task_by_id, create_task, get_user_state,
+    get_task_by_id, create_task,
 )
+from services.premium_service import PremiumService
 from db.models import CATEGORIES
 from ui.theme import COLORS, GRADIENTS, SHADOWS, with_alpha
 from ui.toast import show_toast
@@ -27,7 +28,7 @@ class TimerScreen(ft.Stack):
         self.on_open_premium = on_open_premium
 
         with SessionLocal() as db:
-            self.is_premium = get_user_state(db).is_premium
+            self.is_premium = PremiumService.is_premium()
 
         # === КОЛЬЦО ===
         self.timer_bg = ft.Container(

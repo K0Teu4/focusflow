@@ -5,9 +5,10 @@ from datetime import datetime, timedelta
 import flet as ft
 from db.database import (
     SessionLocal, get_total_stats, get_daily_activity,
-    get_current_streak, get_recent_sessions, get_user_state,
+    get_current_streak, get_recent_sessions,
     get_all_sessions_for_export,
 )
+from services.premium_service import PremiumService
 from ui.theme import COLORS, SHADOWS, with_alpha
 from ui.toast import show_toast
 from ui.sheet import show_sheet, sheet_action
@@ -36,8 +37,8 @@ class StatsScreen(ft.Column):
             activity = get_daily_activity(db, 90)   # один запрос на всю аналитику
             streak = get_current_streak(db)
             recent = get_recent_sessions(db, 50)
-            user = get_user_state(db)
-            self.is_premium = user.is_premium
+
+        self.is_premium = PremiumService.is_premium()
 
         self._total = total
         self._activity = activity
@@ -47,8 +48,6 @@ class StatsScreen(ft.Column):
         self._fill_recent()
         self._assemble()
 
-    # ------------------------------------------------------------------ #
-    # СБОРКА controls (порядок зависит от premium)                        #
     # ------------------------------------------------------------------ #
     def _assemble(self):
         c = [
@@ -70,8 +69,6 @@ class StatsScreen(ft.Column):
     def refresh_data(self):
         self.__init__(self._page, self.on_open_premium)
 
-    # ------------------------------------------------------------------ #
-    # АГРЕГАТЫ (срезы из self._activity)                                  #
     # ------------------------------------------------------------------ #
     def _slice(self, n):
         return self._activity[-n:] if len(self._activity) >= n else self._activity
@@ -132,8 +129,6 @@ class StatsScreen(ft.Column):
             margin=ft.Margin(20, 0, 20, 12))
 
     # ------------------------------------------------------------------ #
-    # ГРАФИК 7 ДНЕЙ (дни внизу, столбики вверх)                           #
-    # ------------------------------------------------------------------ #
     def _chart_card(self):
         week = self._slice(7)
         seconds = [d.get("work_seconds", d["work_minutes"] * 60) for d in week]
@@ -185,8 +180,6 @@ class StatsScreen(ft.Column):
             shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12))
 
     # ------------------------------------------------------------------ #
-    # СРАВНЕНИЕ ПЕРИОДОВ (Premium)                                        #
-    # ------------------------------------------------------------------ #
     def _delta_chip(self, pct):
         if pct > 0:
             icon, color = ft.Icons.ARROW_UPWARD, COLORS["success"]
@@ -225,8 +218,6 @@ class StatsScreen(ft.Column):
             shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12))
 
     # ------------------------------------------------------------------ #
-    # HEATMAP (Premium) — сетка недель × дни, окраска по минутам          #
-    # ------------------------------------------------------------------ #
     def _heat_color(self, mins):
         if mins <= 0:
             return with_alpha(COLORS["text_secondary"], 0x18)
@@ -250,7 +241,7 @@ class StatsScreen(ft.Column):
             week = [date_map.get(cur + timedelta(days=wd), 0) for wd in range(7)]
             weeks.append(week)
             cur += timedelta(days=7)
-        weeks = weeks[-13:]  # последние ~3 месяца
+        weeks = weeks[-13:]
 
         week_cols = []
         for week in weeks:
@@ -280,8 +271,6 @@ class StatsScreen(ft.Column):
             padding=20, bgcolor=COLORS["surface"], border_radius=16,
             shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12))
 
-    # ------------------------------------------------------------------ #
-    # РАСШИРЕННАЯ СТАТИСТИКА 30/90 (Premium)                              #
     # ------------------------------------------------------------------ #
     def _ext_block(self, title, s):
         hours = round(self._sum_min(s) / 60, 1)
@@ -313,8 +302,6 @@ class StatsScreen(ft.Column):
             padding=20, bgcolor=COLORS["surface"], border_radius=16,
             shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 12))
 
-    # ------------------------------------------------------------------ #
-    # ПОСЛЕДНИЕ СЕССИИ + ФИЛЬТР                                           #
     # ------------------------------------------------------------------ #
     def _recent_card(self):
         return ft.Container(
@@ -387,8 +374,6 @@ class StatsScreen(ft.Column):
             margin=ft.Margin(0, 0, 0, 6))
 
     # ------------------------------------------------------------------ #
-    # ЭКСПОРТ / БЭКАП (бесплатно, всем) — буфер обмена + fallback-диалог  #
-    # ------------------------------------------------------------------ #
     def _data_card(self):
         return ft.Container(
             content=ft.Column([
@@ -439,7 +424,6 @@ class StatsScreen(ft.Column):
             show_toast(self._page, "Нет данных для экспорта", ft.Icons.INFO_OUTLINE,
                        COLORS["text_secondary"], duration=2500)
             return
-        # Универсально на всех платформах: буфер обмена, иначе диалог с полем.
         self._copy_or_show(text, fmt, n)
 
     def _copy_or_show(self, text, fmt, n):
@@ -455,7 +439,6 @@ class StatsScreen(ft.Column):
             show_toast(self._page, f"Скопировано в буфер: {n} сессий ({fmt.upper()})",
                        ft.Icons.CONTENT_COPY, COLORS["success"], duration=3500)
         else:
-            # Fallback: диалог с полем для ручного копирования (выделить -> Ctrl+C)
             field = ft.TextField(value=text, read_only=True, multiline=True, max_lines=8,
                                  border_color=COLORS["primary"], color=COLORS["text"],
                                  bgcolor=COLORS["surface"], width=320)
@@ -480,8 +463,6 @@ class StatsScreen(ft.Column):
             dialog.open = True
             self._page.update()
 
-    # ------------------------------------------------------------------ #
-    # PREMIUM-ТИЗЕР (только для Free)                                     #
     # ------------------------------------------------------------------ #
     def _premium_teaser(self):
         return ft.Container(
