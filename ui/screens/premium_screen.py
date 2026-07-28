@@ -1,5 +1,6 @@
 # ui/screens/premium_screen.py
 import flet as ft
+from services.billing_service import BillingService
 from services.premium_service import PremiumService
 from ui.theme import COLORS, SHADOWS, with_alpha
 from ui.toast import show_toast
@@ -32,7 +33,7 @@ COMING_FEATURES = [
 
 
 class PremiumScreen(ft.Column):
-    """Экран Premium: статус/оффер + актуальный список фич с гейтингом."""
+    """Экран Premium: статус/оффер + список фич + покупка/восстановление через BillingService."""
 
     def __init__(self, page: ft.Page, on_premium_changed=None):
         super().__init__(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
@@ -160,6 +161,7 @@ class PremiumScreen(ft.Column):
             self._page.update()
         return h
 
+    # ------------------------------------------------------------------ #
     def _action_area(self):
         if self.is_premium:
             return ft.Container(
@@ -175,21 +177,38 @@ class PremiumScreen(ft.Column):
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
                 margin=ft.Margin(20, 8, 20, 0))
 
+        # Free: покупка + восстановление (restore требуется модерацией магазинов)
         return ft.Container(
             content=ft.Column([
                 ft.ElevatedButton(
                     "Оформить Premium", bgcolor=COLORS["primary"], color=COLORS["bg"],
                     on_click=self._on_buy, width=260, height=52,
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=16))),
-                ft.Container(height=8),
-                ft.Text("Покупка появится в ближайшем обновлении",
-                        size=12, color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
+                ft.Container(height=6),
+                ft.TextButton(
+                    "У меня уже есть покупка — восстановить",
+                    style=ft.ButtonStyle(color=COLORS["text_secondary"]),
+                    on_click=self._on_restore),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
             margin=ft.Margin(20, 8, 20, 0))
 
+    # ------------------------------------------------------------------ #
+    # Покупка / восстановление — идут через BillingService                #
+    # ------------------------------------------------------------------ #
     def _on_buy(self, e):
-        show_toast(self._page, "Покупка появится в следующем обновлении",
-                   ft.Icons.INFO_OUTLINE, COLORS["primary"], duration=3000)
+        BillingService.purchase(self._page, on_success=self._on_purchase_ok)
+
+    def _on_restore(self, e):
+        BillingService.restore(self._page, on_success=self._on_purchase_ok)
+
+    def _on_purchase_ok(self):
+        # Вызовется, когда нативный канал подтвердит оплату/восстановление.
+        if PremiumService.is_premium():
+            if self.on_premium_changed:
+                self.on_premium_changed(True)
+            self.refresh_data()
+            show_toast(self._page, "Premium активирован 🎉", ft.Icons.CHECK_CIRCLE,
+                       COLORS["success"], duration=3000)
 
     def _on_cancel(self, e):
         def build(close):
