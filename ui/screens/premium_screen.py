@@ -1,10 +1,14 @@
 # ui/screens/premium_screen.py
 import flet as ft
-from services.billing_service import BillingService
+from services.license_service import LicenseService
 from services.premium_service import PremiumService
 from ui.theme import COLORS, SHADOWS, with_alpha
 from ui.toast import show_toast
 from ui.sheet import show_sheet, sheet_action
+
+# Ссылка на покупку вне приложения (лендинг/бот/площадка под самозанятость).
+# Пусто -> кнопка «Купить» показывает честный тост «скоро», не падает.
+PURCHASE_URL = ""
 
 PREMIUM_FEATURES = [
     (ft.Icons.FULLSCREEN, "Режим «Фокус»",
@@ -31,9 +35,16 @@ COMING_FEATURES = [
      "Одни данные на всех ваших устройствах", "#8B94A8"),
 ]
 
+_ERROR_TEXT = {
+    "invalid_format": "Неверный формат кода",
+    "bad_signature": "Код недействителен",
+    "unknown_product": "Код для другого продукта",
+    "expired": "Срок действия кода истёк",
+}
+
 
 class PremiumScreen(ft.Column):
-    """Экран Premium: статус/оффер + список фич + покупка/восстановление через BillingService."""
+    """Экран Premium (путь А): статус/оффер + фичи + «Купить на сайте» + «Ввести код»."""
 
     def __init__(self, page: ft.Page, on_premium_changed=None):
         super().__init__(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
@@ -162,6 +173,8 @@ class PremiumScreen(ft.Column):
         return h
 
     # ------------------------------------------------------------------ #
+    # ДЕЙСТВИЯ (путь А): покупка на сайте + активация кода                #
+    # ------------------------------------------------------------------ #
     def _action_area(self):
         if self.is_premium:
             return ft.Container(
@@ -170,45 +183,72 @@ class PremiumScreen(ft.Column):
                             color=COLORS["text_secondary"], text_align=ft.TextAlign.CENTER),
                     ft.Container(height=12),
                     ft.OutlinedButton(
-                        "Отменить подписку",
+                        "Отменить Premium",
                         style=ft.ButtonStyle(side=ft.BorderSide(1.5, with_alpha(COLORS["error"], 0x66)),
                                              color=COLORS["error"]),
                         on_click=self._on_cancel, width=240, height=44),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
                 margin=ft.Margin(20, 8, 20, 0))
 
-        # Free: покупка + восстановление (restore требуется модерацией магазинов)
         return ft.Container(
             content=ft.Column([
                 ft.ElevatedButton(
-                    "Оформить Premium", bgcolor=COLORS["primary"], color=COLORS["bg"],
+                    "Купить Premium", bgcolor=COLORS["primary"], color=COLORS["bg"],
                     on_click=self._on_buy, width=260, height=52,
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=16))),
                 ft.Container(height=6),
                 ft.TextButton(
-                    "У меня уже есть покупка — восстановить",
+                    "У меня есть код — активировать",
                     style=ft.ButtonStyle(color=COLORS["text_secondary"]),
-                    on_click=self._on_restore),
+                    on_click=self._show_activate_dialog),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
             margin=ft.Margin(20, 8, 20, 0))
 
-    # ------------------------------------------------------------------ #
-    # Покупка / восстановление — идут через BillingService                #
-    # ------------------------------------------------------------------ #
     def _on_buy(self, e):
-        BillingService.purchase(self._page, on_success=self._on_purchase_ok)
+        if PURCHASE_URL:
+            self._page.launch_url(PURCHASE_URL)
+        else:
+            show_toast(self._page, "Ссылка на покупку появится в ближайшее время",
+                       ft.Icons.INFO_OUTLINE, COLORS["primary"], duration=3000)
 
-    def _on_restore(self, e):
-        BillingService.restore(self._page, on_success=self._on_purchase_ok)
+    def _show_activate_dialog(self, e):
+        code_field = ft.TextField(
+            label="Лицензионный код", hint_text="XXXX-XXXX-XXXX-XXXX",
+            border_color=COLORS["primary"], color=COLORS["text"],
+            bgcolor=COLORS["surface"], width=300, autofocus=True,
+            text_align=ft.TextAlign.CENTER,
+        )
 
-    def _on_purchase_ok(self):
-        # Вызовется, когда нативный канал подтвердит оплату/восстановление.
-        if PremiumService.is_premium():
-            if self.on_premium_changed:
-                self.on_premium_changed(True)
-            self.refresh_data()
-            show_toast(self._page, "Premium активирован 🎉", ft.Icons.CHECK_CIRCLE,
-                       COLORS["success"], duration=3000)
+        def on_activate(ev):
+            res = LicenseService.activate_code(code_field.value or "")
+            if res["ok"]:
+                dialog.open = False
+                self._page.update()
+                if self.on_premium_changed:
+                    self.on_premium_changed(True)
+                self.refresh_data()
+                show_toast(self._page, "Premium активирован 🎉", ft.Icons.CHECK_CIRCLE,
+                           COLORS["success"], duration=3000)
+            else:
+                show_toast(self._page, _ERROR_TEXT.get(res["error"], "Не удалось активировать код"),
+                           ft.Icons.ERROR_OUTLINE, COLORS["error"], duration=3500)
+
+        code_field.on_submit = on_activate
+        dialog = ft.AlertDialog(
+            title=ft.Text("Активация Premium"),
+            content=ft.Column([
+                ft.Text("Введите код, полученный после покупки.",
+                        size=13, color=COLORS["text_secondary"]),
+                ft.Container(height=8),
+                code_field,
+            ], spacing=0, tight=True),
+            actions=[ft.TextButton("Отмена", on_click=lambda ev: self._close_dialog(dialog)),
+                     ft.TextButton("Активировать", on_click=on_activate)],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
 
     def _on_cancel(self, e):
         def build(close):
@@ -224,3 +264,7 @@ class PremiumScreen(ft.Column):
         self.refresh_data()
         show_toast(self._page, "Premium отключён", ft.Icons.INFO_OUTLINE,
                    COLORS["text_secondary"], duration=2500)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
