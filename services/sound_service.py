@@ -81,16 +81,16 @@ class SoundService:
                 return
             try:
                 res = audio.play()
-                # В 0.85.3 play() может быть корутиной — тогда планируем её,
+                # В 0.85.3 play() может быть корутиной — тогда планируем её;
                 # иначе sync-вызов уже отработал. Без этого звука нет и нет краша.
                 if asyncio.iscoroutine(res):
                     try:
                         asyncio.get_running_loop().create_task(res)
                     except RuntimeError:
                         asyncio.ensure_future(res)
-                    print(f"[FF-SOUND] play({sound_id}): async play scheduled")
+                    print(f"[FF-SOUND] play({sound_id}): async scheduled")
                 else:
-                    print(f"[FF-SOUND] play({sound_id}): sync play ok")
+                    print(f"[FF-SOUND] play({sound_id}): sync ok")
                 self._page.update()
             except Exception as ex:
                 print(f"[FF-SOUND] play({sound_id}) error: {ex!r}")
