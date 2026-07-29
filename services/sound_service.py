@@ -1,6 +1,5 @@
 # services/sound_service.py
 import wave
-import asyncio
 from pathlib import Path
 from typing import Optional
 import flet as ft
@@ -11,6 +10,15 @@ try:
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
+
+# Mobile: нативный звук через Flet-extension (Kotlin MediaPlayer).
+# В Flet 0.85.3 нет ft.Audio, поэтому мобильный звук идёт только через extension.
+# На десктопе пакет может быть не установлен — это нормально, там winsound.
+try:
+    from flet_sound import FletSound
+    HAS_FLET_SOUND = True
+except ImportError:
+    HAS_FLET_SOUND = False
 
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
@@ -24,46 +32,45 @@ class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
         self._page = None
-        self._use_audio = False   # True только если на mobile удалось создать ft.Audio
-        self._audios = {}         # sound_id -> ft.Audio
+        self._flet_sound = None   # экземпляр FletSound на mobile (None на desktop)
 
     def bind_page(self, page: ft.Page):
-        """Привязка к page. На mobile — встроенный ft.Audio (без новых нативных пакетов)."""
+        """Привязка к page. Desktop -> winsound (ничего не регистрируем).
+        Mobile -> FletSound-сервис (один раз на page, защита от смены темы)."""
         self._page = page
         platform = str(getattr(page, "platform", "")).lower()
         is_mobile = ("android" in platform) or ("ios" in platform)
         print(f"[FF-SOUND] bind_page platform={platform!r} is_mobile={is_mobile}")
 
-        # Desktop оставляем winsound — ft.Audio не создаём, сборку/работу не трогаем
+        # Desktop: winsound, extension не нужен
         if not is_mobile:
             return
-        # Если в этой версии Flet нет ft.Audio — мягко отключаем звук на mobile
-        if not hasattr(ft, "Audio"):
-            print("[FF-SOUND] ft.Audio недоступен в этой версии Flet — звук на mobile отключён")
+
+        if not HAS_FLET_SOUND:
+            print("[FF-SOUND] flet_sound extension не установлен — звук на mobile отключён")
             return
 
-        self._use_audio = True
-        created = 0
-        for sid, info in SOUNDS.items():
-            file = info.get("file")
-            if not file:
-                continue
-            # Путь относительно assets_dir="assets" (внутри assets/sounds/)
-            src = f"sounds/{file}"
-            try:
-                audio = ft.Audio(src=src, volume=1.0)
-                self._audios[sid] = audio
-                page.overlay.append(audio)
-                created += 1
-                print(f"[FF-SOUND] created ft.Audio for {sid} src={src}")
-            except Exception as ex:
-                print(f"[FF-SOUND] не удалось создать ft.Audio для {sid}: {ex}")
-                self._use_audio = False
-        print(f"[FF-SOUND] bind_page done: use_audio={self._use_audio} created={created}")
+        # Защита от дубликатов: при смене темы экраны пересоздаются и bind_page
+        # вызывается снова — переиспользуем уже зарегистрированный сервис.
+        existing = getattr(page, "_ff_flet_sound", None)
+        if existing is not None:
+            self._flet_sound = existing
+            print("[FF-SOUND] FletSound переиспользован из page")
+            return
+
         try:
-            page.update()
-        except Exception:
-            pass
+            svc = FletSound()
+            page.services.append(svc)
+            page._ff_flet_sound = svc
+            self._flet_sound = svc
+            try:
+                page.update()
+            except Exception:
+                pass
+            print("[FF-SOUND] FletSound сервис зарегистрирован")
+        except Exception as ex:
+            print(f"[FF-SOUND] не удалось зарегистрировать FletSound: {ex!r}")
+            self._flet_sound = None
 
     # ------------------------------------------------------------------ #
     def play(self, sound_id: Optional[str] = None):
@@ -73,27 +80,13 @@ class SoundService:
         if not file:
             return
 
-        # Mobile: через встроенный ft.Audio (защита от sync И async сигнатуры)
-        if self._use_audio and self._page:
-            audio = self._audios.get(sound_id)
-            if not audio:
-                print(f"[FF-SOUND] play({sound_id}): audio не найден в кэше")
-                return
+        # Mobile: через FletSound (Python _invoke_method -> Dart -> Kotlin MediaPlayer)
+        if self._flet_sound is not None and self._page is not None:
             try:
-                res = audio.play()
-                # В 0.85.3 play() может быть корутиной — тогда планируем её;
-                # иначе sync-вызов уже отработал. Без этого звука нет и нет краша.
-                if asyncio.iscoroutine(res):
-                    try:
-                        asyncio.get_running_loop().create_task(res)
-                    except RuntimeError:
-                        asyncio.ensure_future(res)
-                    print(f"[FF-SOUND] play({sound_id}): async scheduled")
-                else:
-                    print(f"[FF-SOUND] play({sound_id}): sync ok")
-                self._page.update()
+                self._flet_sound.play(sound_id)
+                print(f"[FF-SOUND] play({sound_id}) через FletSound")
             except Exception as ex:
-                print(f"[FF-SOUND] play({sound_id}) error: {ex!r}")
+                print(f"[FF-SOUND] FletSound.play error: {ex!r}")
             return
 
         # Desktop: через winsound
@@ -110,7 +103,6 @@ class SoundService:
                     pass
             self._fallback()
         else:
-            # Mobile без ft.Audio — тишина
             print(f"[FF-SOUND] mobile-no-audio fallback for {file}")
 
     def _fallback(self):

@@ -47,6 +47,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install flet==0.85.3
 
+      # Нативный звук на Android (Kotlin MediaPlayer через Flet-extension).
+      # Ставится ДО flet build, чтобы Dart/Kotlin-части скомпилировались в APK.
+      - name: Install Flet Sound Extension
+        run: pip install ./flet-sound
+
       - name: Build APK (arm64-v8a)
         run: flet build apk --arch arm64-v8a
 
@@ -61,8 +66,8 @@ jobs:
             build/flutter/build/**/app*.apk
           if-no-files-found: warn
 
-# NOTE: кэши ~/.gradle и ~/.pub-cache добавим отдельным коммитом
-# после первого зелёного прогона — чтобы не словить «устаревший кэш сломал сборку».
-# NOTE: релизная подпись своим keystore для RuStore — отдельный шаг
-# (secrets + android/key.properties); сейчас APK подписан авто-ключом,
-# этого достаточно для первой загрузки/теста в консоль.
+# NOTE: жёлтый warning "Node.js 20 is deprecated" безвреден — сборка зелёная,
+# actions просто принудительно идут на Node 24. Версии actions не трогаем,
+# чтобы не плодить правки ради косметики.
+# NOTE: кэши ~/.gradle и ~/.pub-cache добавим отдельным коммитом после первого
+# зелёного прогона со звуком — чтобы не словить «устаревший кэш сломал сборку».
