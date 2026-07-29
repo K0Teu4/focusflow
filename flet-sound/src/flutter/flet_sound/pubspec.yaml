@@ -1,0 +1,19 @@
+name: flet_sound
+description: Flet extension for native Android sound playback
+version: 0.1.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flet: any
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.k0teu4.flet_sound
+        pluginClass: SoundPlugin
