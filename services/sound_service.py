@@ -1,5 +1,6 @@
 # services/sound_service.py
 import wave
+import asyncio
 from pathlib import Path
 from typing import Optional
 import flet as ft
@@ -27,21 +28,22 @@ class SoundService:
         self._audios = {}         # sound_id -> ft.Audio
 
     def bind_page(self, page: ft.Page):
-        """Привязка к page. На mobile пробуем встроенный ft.Audio (без новых нативных пакетов)."""
+        """Привязка к page. На mobile — встроенный ft.Audio (без новых нативных пакетов)."""
         self._page = page
         platform = str(getattr(page, "platform", "")).lower()
         is_mobile = ("android" in platform) or ("ios" in platform)
+        print(f"[FF-SOUND] bind_page platform={platform!r} is_mobile={is_mobile}")
 
         # Desktop оставляем winsound — ft.Audio не создаём, сборку/работу не трогаем
         if not is_mobile:
             return
-
         # Если в этой версии Flet нет ft.Audio — мягко отключаем звук на mobile
         if not hasattr(ft, "Audio"):
-            print("⚠ ft.Audio недоступен в этой версии Flet — звук на mobile отключён")
+            print("[FF-SOUND] ft.Audio недоступен в этой версии Flet — звук на mobile отключён")
             return
 
         self._use_audio = True
+        created = 0
         for sid, info in SOUNDS.items():
             file = info.get("file")
             if not file:
@@ -52,15 +54,18 @@ class SoundService:
                 audio = ft.Audio(src=src, volume=1.0)
                 self._audios[sid] = audio
                 page.overlay.append(audio)
+                created += 1
+                print(f"[FF-SOUND] created ft.Audio for {sid} src={src}")
             except Exception as ex:
-                # Любая несовместимость API — молча откат в заглушку, без краша
-                print(f"⚠ не удалось создать ft.Audio для {sid}: {ex}")
+                print(f"[FF-SOUND] не удалось создать ft.Audio для {sid}: {ex}")
                 self._use_audio = False
+        print(f"[FF-SOUND] bind_page done: use_audio={self._use_audio} created={created}")
         try:
             page.update()
         except Exception:
             pass
 
+    # ------------------------------------------------------------------ #
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
             sound_id = "bell"
@@ -68,15 +73,27 @@ class SoundService:
         if not file:
             return
 
-        # Mobile: через встроенный ft.Audio
+        # Mobile: через встроенный ft.Audio (защита от sync И async сигнатуры)
         if self._use_audio and self._page:
             audio = self._audios.get(sound_id)
-            if audio:
-                try:
-                    audio.play()
-                    self._page.update()
-                except Exception as ex:
-                    print(f"⚠ audio.play error: {ex}")
+            if not audio:
+                print(f"[FF-SOUND] play({sound_id}): audio не найден в кэше")
+                return
+            try:
+                res = audio.play()
+                # В 0.85.3 play() может быть корутиной — тогда планируем её,
+                # иначе sync-вызов уже отработал. Без этого звука нет и нет краша.
+                if asyncio.iscoroutine(res):
+                    try:
+                        asyncio.get_running_loop().create_task(res)
+                    except RuntimeError:
+                        asyncio.ensure_future(res)
+                    print(f"[FF-SOUND] play({sound_id}): async play scheduled")
+                else:
+                    print(f"[FF-SOUND] play({sound_id}): sync play ok")
+                self._page.update()
+            except Exception as ex:
+                print(f"[FF-SOUND] play({sound_id}) error: {ex!r}")
             return
 
         # Desktop: через winsound
@@ -93,8 +110,8 @@ class SoundService:
                     pass
             self._fallback()
         else:
-            # Mobile без ft.Audio — тишина (звук добьём через CI, см. план Б)
-            print(f"🔊 [mobile-no-audio] {file}")
+            # Mobile без ft.Audio — тишина
+            print(f"[FF-SOUND] mobile-no-audio fallback for {file}")
 
     def _fallback(self):
         if not HAS_WINSOUND:

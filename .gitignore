@@ -42,12 +42,6 @@ focusflow_full_audit_*.txt
 # pytest
 .pytest_cache/
 
-# Аудиофайлы слишком большие для GitHub (лимит 100MB)
-# Храним только структуру папки
-assets/sounds/*.wav
-assets/sounds/*.mp3
-!assets/sounds/.gitkeep
-
 # Логи
 *.log
 
