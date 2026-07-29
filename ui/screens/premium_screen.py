@@ -74,6 +74,9 @@ class PremiumScreen(ft.Column):
     def refresh_data(self):
         self.__init__(self._page, self.on_premium_changed)
 
+    # ------------------------------------------------------------------ #
+    # СТАТУС-КАРТОЧКА: двухслойный ореол у звезды                         #
+    # ------------------------------------------------------------------ #
     def _star_halo(self, color):
         return ft.Container(
             width=92, height=92, border_radius=46,
@@ -114,6 +117,9 @@ class PremiumScreen(ft.Column):
             border=ft.BorderSide(1.5, with_alpha(accent, 0x55)),
             shadow=SHADOWS["card"], margin=ft.Margin(20, 0, 20, 16))
 
+    # ------------------------------------------------------------------ #
+    # ЗАГОЛОВОК СЕКЦИИ: акцентная полоска слева                           #
+    # ------------------------------------------------------------------ #
     def _section_title(self, text, accent):
         return ft.Container(
             content=ft.Row([
@@ -122,6 +128,7 @@ class PremiumScreen(ft.Column):
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.Padding(24, 10, 24, 8))
 
+    # ------------------------------------------------------------------ #
     def _features_block(self, features, gated=False, coming=False):
         return ft.Container(
             content=ft.Column([self._feature_row(*f, gated=gated, coming=coming) for f in features], spacing=8),
@@ -211,12 +218,67 @@ class PremiumScreen(ft.Column):
             show_toast(self._page, "Ссылка на покупку появится в ближайшее время",
                        ft.Icons.INFO_OUTLINE, COLORS["primary"], duration=3000)
 
+    # ------------------------------------------------------------------ #
+    # НОРМАЛИЗАЦИЯ ВВОДА КОДА (upper + маска + фильтр base32)             #
+    # ------------------------------------------------------------------ #
+    def _clean_code(self, raw):
+        """Только валидные base32-символы, верхний регистр, не больше 16."""
+        import re
+        return re.sub(r"[^A-Z2-7]", "", (raw or "").upper())[:16]
+
+    def _group_code(self, clean):
+        """Группировка по 4 через дефис: XXXX-XXXX-XXXX-XXXX."""
+        return "-".join(clean[i:i + 4] for i in range(0, len(clean), 4))
+
+    def _read_clipboard(self):
+        """Безопасное чтение буфера (None, если метода нет / пусто / ошибка)."""
+        cb = getattr(self._page, "get_clipboard", None)
+        if not cb:
+            return None
+        try:
+            v = cb()
+        except Exception:
+            return None
+        return v if isinstance(v, str) else None
+
     def _show_activate_dialog(self, e):
+        counter = ft.Text("0 / 16", size=11, color=COLORS["text_secondary"])
+
         code_field = ft.TextField(
             label="Лицензионный код", hint_text="XXXX-XXXX-XXXX-XXXX",
             border_color=COLORS["primary"], color=COLORS["text"],
             bgcolor=COLORS["surface"], width=300, autofocus=True,
             text_align=ft.TextAlign.CENTER,
+        )
+
+        def on_change(ev):
+            clean = self._clean_code(code_field.value or "")
+            formatted = self._group_code(clean)
+            counter.value = f"{len(clean)} / 16"
+            counter.color = COLORS["text_secondary"]
+            if formatted != (code_field.value or ""):
+                code_field.value = formatted      # авто-дефисы + upper + фильтр
+            code_field.border_color = COLORS["primary"]  # сброс красной рамки при вводе
+            self._page.update()
+
+        code_field.on_change = on_change
+
+        def do_paste(ev):
+            v = self._read_clipboard()
+            if v and v.strip():
+                clean = self._clean_code(v)
+                code_field.value = self._group_code(clean)
+                counter.value = f"{len(clean)} / 16"
+                code_field.border_color = COLORS["primary"]
+                self._page.update()
+            else:
+                show_toast(self._page, "Буфер обмена пуст",
+                           ft.Icons.INFO_OUTLINE, COLORS["text_secondary"], duration=2000)
+
+        paste_btn = ft.TextButton(
+            "Вставить из буфера",
+            style=ft.ButtonStyle(color=COLORS["primary"]),
+            on_click=do_paste,
         )
 
         def on_activate(ev):
@@ -230,10 +292,24 @@ class PremiumScreen(ft.Column):
                 show_toast(self._page, "Premium активирован 🎉", ft.Icons.CHECK_CIRCLE,
                            COLORS["success"], duration=3000)
             else:
+                # микро-фидбек: поле краснеет при ошибке
+                code_field.border_color = COLORS["error"]
+                counter.value = "проверьте код"
+                counter.color = COLORS["error"]
+                self._page.update()
                 show_toast(self._page, _ERROR_TEXT.get(res["error"], "Не удалось активировать код"),
                            ft.Icons.ERROR_OUTLINE, COLORS["error"], duration=3500)
 
         code_field.on_submit = on_activate
+
+        # Авто-предзаполнение: если в буфере уже полный код — подставляем сразу
+        pre = self._read_clipboard()
+        if pre:
+            clean = self._clean_code(pre)
+            if len(clean) == 16:
+                code_field.value = self._group_code(clean)
+                counter.value = "16 / 16"
+
         dialog = ft.AlertDialog(
             title=ft.Text("Активация Premium"),
             content=ft.Column([
@@ -241,7 +317,10 @@ class PremiumScreen(ft.Column):
                         size=13, color=COLORS["text_secondary"]),
                 ft.Container(height=8),
                 code_field,
-            ], spacing=0, tight=True),
+                ft.Row([counter, paste_btn],
+                       alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=6, tight=True),
             actions=[ft.TextButton("Отмена", on_click=lambda ev: self._close_dialog(dialog)),
                      ft.TextButton("Активировать", on_click=on_activate)],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -250,6 +329,7 @@ class PremiumScreen(ft.Column):
         dialog.open = True
         self._page.update()
 
+    # ------------------------------------------------------------------ #
     def _on_cancel(self, e):
         def build(close):
             return [sheet_action(
