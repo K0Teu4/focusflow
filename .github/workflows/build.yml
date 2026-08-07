@@ -41,7 +41,7 @@ jobs:
           pip install flet==0.86.5 flet-audio==0.86.5
 
       - name: Build APK (arm64-v8a)
-        run: flet build apk --arch arm64-v8a
+        run: flet build apk --source-packages flet_audio --arch arm64-v8a
 
       - name: Upload APK
         if: always()
