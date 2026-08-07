@@ -24,16 +24,25 @@ class SoundService:
         is_mobile = ("android" in platform) or ("ios" in platform)
         print(f"[FF-SOUND] bind_page platform={platform!r} is_mobile={is_mobile}")
 
-        for sid, info in SOUNDS.items():
-            audio = ft.Audio(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
-            page.overlay.append(audio)
-            self._audios[sid] = audio
+        if not hasattr(ft, "Audio"):
+            print("[FF-SOUND] ft.Audio отсутствует — звук отключён")
+            return
 
-        try:
-            page.update()
-            print("[FF-SOUND] аудио-контроллеры зарегистрированы в overlay")
-        except Exception as ex:
-            print(f"[FF-SOUND] page.update() failed: {ex!r}")
+        for sid, info in SOUNDS.items():
+            try:
+                audio = ft.Audio(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
+                page.overlay.append(audio)
+                self._audios[sid] = audio
+            except Exception as ex:
+                print(f"[FF-SOUND] не удалось создать Audio для {sid}: {ex!r}")
+
+        if self._audios:
+            try:
+                page.update()
+                print("[FF-SOUND] аудио-контроллеры зарегистрированы")
+            except Exception as ex:
+                print(f"[FF-SOUND] page.update() failed: {ex!r}")
+                self._audios.clear()
 
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
