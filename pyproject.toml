@@ -5,7 +5,6 @@ description = "FocusFlow Pomodoro app"
 requires-python = ">=3.12"
 dependencies = [
     "flet>=0.86.5",
-    "flet-audio>=0.86.5",
     "sqlalchemy",
 ]
 

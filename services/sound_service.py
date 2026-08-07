@@ -10,14 +10,11 @@ try:
 except ImportError:
     HAS_WINSOUND = False
 
-AudioControl = None
 try:
-    from flet_audio import Audio as AudioControl
+    from flet_sound import FletSound
+    HAS_FLET_SOUND = True
 except ImportError:
-    try:
-        from flet.audio import Audio as AudioControl
-    except ImportError:
-        AudioControl = None
+    HAS_FLET_SOUND = False
 
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
@@ -31,7 +28,7 @@ class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
         self._page: Optional[ft.Page] = None
-        self._audios = {}
+        self._flet_sound = None
 
     def bind_page(self, page: ft.Page):
         self._page = page
@@ -42,25 +39,30 @@ class SoundService:
         if not is_mobile:
             return
 
-        if AudioControl is None:
-            print("[FF-SOUND] flet_audio не установлен — звук на mobile отключён")
+        if not HAS_FLET_SOUND:
+            print("[FF-SOUND] flet_sound не установлен — звук на mobile отключён")
             return
 
-        for sid, info in SOUNDS.items():
-            try:
-                audio = AudioControl(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
-                page.overlay.append(audio)
-                self._audios[sid] = audio
-            except Exception as ex:
-                print(f"[FF-SOUND] не удалось создать Audio для {sid}: {ex!r}")
+        existing = getattr(page, "_ff_flet_sound", None)
+        if existing is not None:
+            self._flet_sound = existing
+            return
 
-        if self._audios:
+        try:
+            svc = FletSound()
+            page.services.append(svc)
+            page._ff_flet_sound = svc
+            self._flet_sound = svc
             try:
                 page.update()
-                print("[FF-SOUND] аудио-контроллеры зарегистрированы в overlay")
             except Exception as ex:
                 print(f"[FF-SOUND] page.update() failed: {ex!r}")
-                self._audios.clear()
+                self._flet_sound = None
+                if svc in page.services:
+                    page.services.remove(svc)
+        except Exception as ex:
+            print(f"[FF-SOUND] flet_sound bind error: {ex!r}")
+            self._flet_sound = None
 
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
@@ -69,14 +71,12 @@ class SoundService:
         if not file:
             return
 
-        audio = self._audios.get(sound_id) or self._audios.get("bell")
-        if audio is not None:
+        if self._flet_sound is not None and self._page is not None:
             try:
-                audio.play()
-                print(f"[FF-SOUND] play({sound_id}) через flet_audio")
+                self._flet_sound.play(sound_id)
                 return
             except Exception as ex:
-                print(f"[FF-SOUND] flet_audio play error: {ex!r}")
+                print(f"[FF-SOUND] flet_sound play error: {ex!r}")
 
         if HAS_WINSOUND:
             sound_path = self.sounds_dir / file
@@ -90,8 +90,6 @@ class SoundService:
                 except Exception:
                     pass
             self._fallback()
-        else:
-            print(f"[FF-SOUND] нет доступного бэкенда звука для {file}")
 
     def _fallback(self):
         if not HAS_WINSOUND:
