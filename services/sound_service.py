@@ -4,6 +4,21 @@ from typing import Optional
 
 import flet as ft
 
+try:
+    import winsound
+    HAS_WINSOUND = True
+except ImportError:
+    HAS_WINSOUND = False
+
+AudioControl = None
+try:
+    from flet_audio import Audio as AudioControl
+except ImportError:
+    try:
+        from flet.audio import Audio as AudioControl
+    except ImportError:
+        AudioControl = None
+
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
     "chime":   {"name": "🎐 Перезвон",    "file": "chime.wav",   "premium": True},
@@ -24,13 +39,16 @@ class SoundService:
         is_mobile = ("android" in platform) or ("ios" in platform)
         print(f"[FF-SOUND] bind_page platform={platform!r} is_mobile={is_mobile}")
 
-        if not hasattr(ft, "Audio"):
-            print("[FF-SOUND] ft.Audio отсутствует — звук отключён")
+        if not is_mobile:
+            return
+
+        if AudioControl is None:
+            print("[FF-SOUND] flet_audio не установлен — звук на mobile отключён")
             return
 
         for sid, info in SOUNDS.items():
             try:
-                audio = ft.Audio(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
+                audio = AudioControl(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
                 page.overlay.append(audio)
                 self._audios[sid] = audio
             except Exception as ex:
@@ -39,7 +57,7 @@ class SoundService:
         if self._audios:
             try:
                 page.update()
-                print("[FF-SOUND] аудио-контроллеры зарегистрированы")
+                print("[FF-SOUND] аудио-контроллеры зарегистрированы в overlay")
             except Exception as ex:
                 print(f"[FF-SOUND] page.update() failed: {ex!r}")
                 self._audios.clear()
@@ -47,19 +65,48 @@ class SoundService:
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
             sound_id = "bell"
-        audio = self._audios.get(sound_id)
-        if audio is None:
-            audio = self._audios.get("bell")
-        if audio is None:
+        file = SOUNDS[sound_id].get("file")
+        if not file:
             return
-        try:
-            audio.play()
-            print(f"[FF-SOUND] play({sound_id})")
-        except Exception as ex:
-            print(f"[FF-SOUND] play error: {ex!r}")
 
-    def play_bell(self):
-        self.play("bell")
+        audio = self._audios.get(sound_id) or self._audios.get("bell")
+        if audio is not None:
+            try:
+                audio.play()
+                print(f"[FF-SOUND] play({sound_id}) через flet_audio")
+                return
+            except Exception as ex:
+                print(f"[FF-SOUND] flet_audio play error: {ex!r}")
+
+        if HAS_WINSOUND:
+            sound_path = self.sounds_dir / file
+            if sound_path.exists() and self._is_valid_wav(sound_path):
+                try:
+                    winsound.PlaySound(
+                        str(sound_path),
+                        winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+                    )
+                    return
+                except Exception:
+                    pass
+            self._fallback()
+        else:
+            print(f"[FF-SOUND] нет доступного бэкенда звука для {file}")
+
+    def _fallback(self):
+        if not HAS_WINSOUND:
+            return
+        bell = self.sounds_dir / "bell.wav"
+        if bell.exists() and self._is_valid_wav(bell):
+            try:
+                winsound.PlaySound(
+                    str(bell),
+                    winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+                )
+                return
+            except Exception:
+                pass
+        winsound.MessageBeep(winsound.MB_OK)
 
     @staticmethod
     def _is_valid_wav(path: Path) -> bool:
@@ -72,6 +119,9 @@ class SoundService:
                 )
         except Exception:
             return False
+
+    def play_bell(self):
+        self.play("bell")
 
     def get_sound_file_path(self, sound_id: str) -> Optional[Path]:
         file = SOUNDS.get(sound_id, SOUNDS["bell"]).get("file")
