@@ -1,18 +1,20 @@
 # .github/workflows/build.yml
+
 # CI-сборка APK на ubuntu: без локального CMake-бага Windows.
 # Триггеры: push в main + ручной запуск (кнопка Run workflow).
 # Артефакт (APK) скачивается со страницы Actions -> последний прогон -> Artifacts.
+
 name: Build Android APK
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # ручной запуск из вкладки Actions
+  workflow_dispatch: # ручной запуск из вкладки Actions
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40   # первый прогон без кэшей дольше; запас на установку SDK
+    timeout-minutes: 40  # первый прогон без кэшей дольше; запас на установку SDK
 
     steps:
       - name: Checkout
@@ -69,5 +71,6 @@ jobs:
 # NOTE: жёлтый warning "Node.js 20 is deprecated" безвреден — сборка зелёная,
 # actions просто принудительно идут на Node 24. Версии actions не трогаем,
 # чтобы не плодить правки ради косметики.
+
 # NOTE: кэши ~/.gradle и ~/.pub-cache добавим отдельным коммитом после первого
 # зелёного прогона со звуком — чтобы не словить «устаревший кэш сломал сборку».

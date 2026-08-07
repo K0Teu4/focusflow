@@ -6,7 +6,6 @@ requires-python = ">=3.10"
 dependencies = [
     "flet>=0.85.3",
     "sqlalchemy",
-    "flet-sound @ file://./flet-sound",
 ]
 
 [tool.flet]
