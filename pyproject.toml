@@ -1,18 +1,17 @@
 [project]
 name = "focusflow"
-version = "1.0.0"
-description = "Pomodoro timer with tasks and Premium subscription"
-requires-python = ">=3.10"
+version = "0.1.0"
+description = "FocusFlow Pomodoro app"
+requires-python = ">=3.12"
 dependencies = [
     "flet>=0.85.3",
+    "flet-audio",
     "sqlalchemy",
 ]
 
-[tool.flet]
-org = "com.k0teu4"
-product = "FocusFlow"
-version = "1.0.0"
-build = 1
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.flet.app]
 exclude = [
@@ -27,16 +26,3 @@ exclude = [
     "test_app.py",
     "README.md",
 ]
-
-# Первый кадр от ОС при тапе по иконке — тёмный бренд вместо дефолтного белого.
-[tool.flet.splash]
-color = "#141A2E"
-dark_color = "#141A2E"
-
-[tool.flet.android]
-permissions = [
-    "android.permission.INTERNET",
-    "android.permission.VIBRATE",
-]
-min_sdk = 24
-target_sdk = 34

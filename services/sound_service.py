@@ -1,24 +1,8 @@
-# services/sound_service.py
 import wave
 from pathlib import Path
 from typing import Optional
+
 import flet as ft
-
-# Desktop: winsound (работает на Windows)
-try:
-    import winsound
-    HAS_WINSOUND = True
-except ImportError:
-    HAS_WINSOUND = False
-
-# Mobile: нативный звук через Flet-extension (Kotlin MediaPlayer).
-# В Flet 0.85.3 нет ft.Audio, поэтому мобильный звук идёт только через extension.
-# На десктопе пакет может быть не установлен — это нормально, там winsound.
-try:
-    from flet_sound import FletSound
-    HAS_FLET_SOUND = True
-except ImportError:
-    HAS_FLET_SOUND = False
 
 SOUNDS = {
     "bell":    {"name": "🔔 Колокольчик", "file": "bell.wav",    "premium": False},
@@ -31,111 +15,54 @@ SOUNDS = {
 class SoundService:
     def __init__(self):
         self.sounds_dir = Path(__file__).parent.parent / "assets" / "sounds"
-        self._page = None
-        self._flet_sound = None   # экземпляр FletSound на mobile (None на desktop)
+        self._page: Optional[ft.Page] = None
+        self._audios = {}
 
     def bind_page(self, page: ft.Page):
-        """Привязка к page. Desktop -> winsound (ничего не регистрируем).
-        Mobile -> FletSound-сервис (один раз на page, защита от смены темы)."""
         self._page = page
         platform = str(getattr(page, "platform", "")).lower()
         is_mobile = ("android" in platform) or ("ios" in platform)
         print(f"[FF-SOUND] bind_page platform={platform!r} is_mobile={is_mobile}")
 
-        # Desktop: winsound, extension не нужен
-        if not is_mobile:
-            return
-
-        if not HAS_FLET_SOUND:
-            print("[FF-SOUND] flet_sound extension не установлен — звук на mobile отключён")
-            return
-
-        # Защита от дубликатов: при смене темы экраны пересоздаются и bind_page
-        # вызывается снова — переиспользуем уже зарегистрированный сервис.
-        existing = getattr(page, "_ff_flet_sound", None)
-        if existing is not None:
-            self._flet_sound = existing
-            print("[FF-SOUND] FletSound переиспользован из page")
-            return
+        for sid, info in SOUNDS.items():
+            audio = ft.Audio(src=f"sounds/{info['file']}", autoplay=False, volume=1.0)
+            page.overlay.append(audio)
+            self._audios[sid] = audio
 
         try:
-            svc = FletSound()
-            page.services.append(svc)
-            page._ff_flet_sound = svc
-            self._flet_sound = svc
-            try:
-                page.update()
-            except Exception:
-                pass
-            print("[FF-SOUND] FletSound сервис зарегистрирован")
+            page.update()
+            print("[FF-SOUND] аудио-контроллеры зарегистрированы в overlay")
         except Exception as ex:
-            print(f"[FF-SOUND] не удалось зарегистрировать FletSound: {ex!r}")
-            self._flet_sound = None
+            print(f"[FF-SOUND] page.update() failed: {ex!r}")
 
-    # ------------------------------------------------------------------ #
     def play(self, sound_id: Optional[str] = None):
         if sound_id is None or sound_id not in SOUNDS:
             sound_id = "bell"
-        file = SOUNDS[sound_id].get("file")
-        if not file:
+        audio = self._audios.get(sound_id)
+        if audio is None:
+            audio = self._audios.get("bell")
+        if audio is None:
             return
+        try:
+            audio.play()
+            print(f"[FF-SOUND] play({sound_id})")
+        except Exception as ex:
+            print(f"[FF-SOUND] play error: {ex!r}")
 
-        # Mobile: через FletSound (Python _invoke_method -> Dart -> Kotlin MediaPlayer)
-        if self._flet_sound is not None and self._page is not None:
-            try:
-                self._flet_sound.play(sound_id)
-                print(f"[FF-SOUND] play({sound_id}) через FletSound")
-            except Exception as ex:
-                print(f"[FF-SOUND] FletSound.play error: {ex!r}")
-            return
-
-        # Desktop: через winsound
-        if HAS_WINSOUND:
-            sound_path = self.sounds_dir / file
-            if sound_path.exists() and self._is_valid_wav(sound_path):
-                try:
-                    winsound.PlaySound(
-                        str(sound_path),
-                        winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
-                    )
-                    return
-                except Exception:
-                    pass
-            self._fallback()
-        else:
-            print(f"[FF-SOUND] mobile-no-audio fallback for {file}")
-
-    def _fallback(self):
-        if not HAS_WINSOUND:
-            return
-        bell = self.sounds_dir / "bell.wav"
-        if bell.exists() and self._is_valid_wav(bell):
-            try:
-                winsound.PlaySound(
-                    str(bell),
-                    winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
-                )
-                return
-            except Exception:
-                pass
-        winsound.MessageBeep(winsound.MB_OK)
+    def play_bell(self):
+        self.play("bell")
 
     @staticmethod
     def _is_valid_wav(path: Path) -> bool:
         try:
             with wave.open(str(path), "rb") as w:
-                if w.getcomptype() != "NONE":
-                    return False
-                if w.getnchannels() not in (1, 2):
-                    return False
-                if w.getsampwidth() not in (1, 2):
-                    return False
-                return True
+                return (
+                    w.getcomptype() == "NONE"
+                    and w.getnchannels() in (1, 2)
+                    and w.getsampwidth() in (1, 2)
+                )
         except Exception:
             return False
-
-    def play_bell(self):
-        self.play("bell")
 
     def get_sound_file_path(self, sound_id: str) -> Optional[Path]:
         file = SOUNDS.get(sound_id, SOUNDS["bell"]).get("file")

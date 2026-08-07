@@ -1,20 +1,14 @@
-# .github/workflows/build.yml
-
-# CI-сборка APK на ubuntu: без локального CMake-бага Windows.
-# Триггеры: push в main + ручной запуск (кнопка Run workflow).
-# Артефакт (APK) скачивается со страницы Actions -> последний прогон -> Artifacts.
-
 name: Build Android APK
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # ручной запуск из вкладки Actions
+  workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # первый прогон без кэшей дольше; запас на установку SDK
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -25,20 +19,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      # JDK 17 для Gradle/Android (flet подхватит JAVA_HOME сам)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # Базовый Android SDK + нужные пакеты; недостающее flet доустановит сам
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-35 build-tools;34.0.0"
 
-      # Тот же Flutter, что локально (3.41.7) — чтобы не словить расхождение версий
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -47,17 +38,11 @@ jobs:
       - name: Install Flet
         run: |
           python -m pip install --upgrade pip
-          pip install flet==0.85.3
-
-      # Нативный звук на Android (Kotlin MediaPlayer через Flet-extension).
-      # Ставится ДО flet build, чтобы Dart/Kotlin-части скомпилировались в APK.
-      - name: Install Flet Sound Extension
-        run: pip install ./flet-sound
+          pip install flet==0.85.3 flet-audio
 
       - name: Build APK (arm64-v8a)
-        run: flet build apk --arch arm64-v8a
+        run: flet build apk --include-packages flet_audio --arch arm64-v8a
 
-      # Артефакт: два паттерна покрывают оба возможных расположения APK
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,10 +52,3 @@ jobs:
             build/apk/**/*.apk
             build/flutter/build/**/app*.apk
           if-no-files-found: warn
-
-# NOTE: жёлтый warning "Node.js 20 is deprecated" безвреден — сборка зелёная,
-# actions просто принудительно идут на Node 24. Версии actions не трогаем,
-# чтобы не плодить правки ради косметики.
-
-# NOTE: кэши ~/.gradle и ~/.pub-cache добавим отдельным коммитом после первого
-# зелёного прогона со звуком — чтобы не словить «устаревший кэш сломал сборку».
