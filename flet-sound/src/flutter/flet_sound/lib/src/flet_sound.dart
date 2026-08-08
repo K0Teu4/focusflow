@@ -4,12 +4,11 @@ import 'package:flutter/services.dart';
 class FletSoundService extends FletService {
   FletSoundService({required super.control});
 
-  static const MethodChannel _channel = MethodChannel('com.k0teu4.flet_sound/sound');
+  static const MethodChannel _channel = MethodChannel('flet_sound');
 
   @override
   void init() {
     super.init();
-    // Подписка на invoke из Python (control._invoke_method("play", {...}))
     control.addInvokeMethodListener(_onInvokeMethod);
   }
 

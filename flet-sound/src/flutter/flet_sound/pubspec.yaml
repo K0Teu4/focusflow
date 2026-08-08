@@ -16,4 +16,4 @@ flutter:
     platforms:
       android:
         package: com.k0teu4.flet_sound
-        pluginClass: SoundPlugin
+        pluginClass: FletSoundPlugin

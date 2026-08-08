@@ -2,13 +2,13 @@ group 'com.k0teu4.flet_sound'
 version '1.0'
 
 buildscript {
-    ext.kotlin_version = '1.9.22' // Современная стабильная версия Kotlin
+    ext.kotlin_version = '1.9.22'
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.0' // Совместимая версия Android Gradle Plugin
+        classpath 'com.android.tools.build:gradle:8.2.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -24,7 +24,6 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    // Namespace обязателен для современных версий AGP
     namespace 'com.k0teu4.flet_sound'
     compileSdkVersion 34
 
@@ -42,10 +41,6 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 21 // Стандартный минимум для Flutter
+        minSdkVersion 21
     }
-}
-
-dependencies {
-    // Здесь НЕ должно быть слова 'module'. Зависимости добавляются только при необходимости.
 }

@@ -25,19 +25,19 @@ class FletSoundPlugin : FlutterPlugin, MethodCallHandler {
         if (call.method == "play") {
             val soundId = call.argument<String>("sound") ?: "bell"
             val assetPath = "flutter_assets/assets/sounds/$soundId.wav"
-
+            
             try {
                 mediaPlayer?.stop()
                 mediaPlayer?.release()
-
+                
                 val inputStream = context.assets.open(assetPath)
                 val tempFile = File.createTempFile("ff_sound_", ".wav", context.cacheDir)
                 tempFile.deleteOnExit()
-
+                
                 FileOutputStream(tempFile).use { output ->
                     inputStream.copyTo(output)
                 }
-
+                
                 mediaPlayer = MediaPlayer().apply {
                     setDataSource(tempFile.absolutePath)
                     prepare()
@@ -47,7 +47,7 @@ class FletSoundPlugin : FlutterPlugin, MethodCallHandler {
                         mediaPlayer = null
                         tempFile.delete()
                     }
-                    setOnErrorListener { _, _, _ ->
+                    setOnErrorListener { _, what, extra ->
                         release()
                         mediaPlayer = null
                         tempFile.delete()
