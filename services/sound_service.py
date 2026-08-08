@@ -41,6 +41,7 @@ class SoundService:
 
         if not HAS_FLET_SOUND:
             print("[FF-SOUND] flet_sound не установлен — звук на mobile отключён")
+            print("[FF-SOUND] Проверьте: flet build apk --source-packages flet_sound")
             return
 
         existing = getattr(page, "_ff_flet_sound", None)
