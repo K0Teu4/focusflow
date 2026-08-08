@@ -1,4 +1,3 @@
-# services/timer_service.py
 import asyncio
 from typing import Callable, Optional
 from datetime import datetime
@@ -16,13 +15,12 @@ class TimerService:
                 self.long_break_sec = self._calc_seconds(settings, "long_break", 15)
                 self.sessions_until_long_break = int(settings.get("sessions_until_long_break", 4))
                 self.auto_start_delay = int(settings.get("auto_start_delay", 3))
-        except:
+        except Exception:
             self.work_sec = int(work_min * 60)
             self.break_sec = int(break_min * 60)
             self.long_break_sec = 15 * 60
             self.sessions_until_long_break = 4
             self.auto_start_delay = 3
-
         self.current_sec = self.work_sec
         self.is_running = False
         self.is_work_session = True
@@ -36,6 +34,7 @@ class TimerService:
         self._sound_service = SoundService()
         self._task: Optional[asyncio.Task] = None
         self.just_finished = False
+        self.last_finished_text = ""
 
     @staticmethod
     def _calc_seconds(settings: dict, key: str, default_min: int) -> int:
@@ -61,7 +60,7 @@ class TimerService:
                 self.auto_start_delay = int(settings.get("auto_start_delay", 3))
                 if not self.is_running:
                     self.current_sec = self._get_current_target_sec()
-        except:
+        except Exception:
             pass
 
     def _get_current_target_sec(self):
@@ -73,7 +72,6 @@ class TimerService:
             return self.break_sec
 
     def get_elapsed_sec(self) -> int:
-        """НОВОЕ: сколько секунд прошло с начала текущей сессии"""
         return max(0, self._get_current_target_sec() - self.current_sec)
 
     async def start(self, callback: Callable, task_id: Optional[int] = None, sound_enabled: bool = True):
@@ -82,10 +80,9 @@ class TimerService:
                 settings = get_settings(db)
                 self._sound_enabled = settings.get("sound_enabled", sound_enabled)
                 self._sound_type = settings.get("sound_type", "bell")
-        except:
+        except Exception:
             self._sound_enabled = sound_enabled
             self._sound_type = "bell"
-
         self.is_running = True
         self.just_finished = False
         self.session_started_at = datetime.utcnow()
@@ -124,22 +121,13 @@ class TimerService:
         self.current_sec = self._get_current_target_sec()
 
     def skip_and_save(self) -> int:
-        """
-        НОВОЕ: Пропускает сессию, сохраняя частичный прогресс.
-        Возвращает количество сохранённых секунд.
-        """
         elapsed = self.get_elapsed_sec()
-
-        # Сохраняем только если прошло хотя бы 1 секунда
         if elapsed > 0:
             self._save_session_with_duration(elapsed)
-
-        # Переключаем тип (счётчик увеличивается для работы)
         self.toggle_session_type()
         return elapsed
 
     def _save_session_with_duration(self, duration: int):
-        """Сохраняет сессию с указанной длительностью"""
         if self.is_work_session:
             session_type = 'work'
         elif self.is_long_break:
@@ -181,10 +169,14 @@ class TimerService:
                 self.current_sec -= 1
                 if self._callback:
                     self._callback()
-
             if self.current_sec <= 0 and self.is_running:
                 self.is_running = False
                 self.just_finished = True
+                self.last_finished_text = {
+                    "work": "Работа завершена!",
+                    "long_break": "Длинный перерыв завершён!",
+                    "rest": "Короткий перерыв завершён!",
+                }[self.get_mode_key()]
                 self._save_session()
                 if self._sound_enabled:
                     self._sound_service.play(self._sound_type)
@@ -213,7 +205,6 @@ class TimerService:
 
     @staticmethod
     def format_duration(total_sec: int) -> str:
-        """НОВОЕ: форматирует длительность с секундами"""
         minutes = total_sec // 60
         seconds = total_sec % 60
         if seconds > 0:

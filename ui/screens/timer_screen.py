@@ -379,7 +379,7 @@ class TimerScreen(ft.Stack):
         if self.timer_service.just_finished:
             self.timer_service.just_finished = False
             self._pulse()
-            self._show_snackbar(f"✅ {self.timer_service.get_session_type_display()} завершена!", COLORS["success"])
+            self._show_snackbar(f"✅ {self.timer_service.last_finished_text}", COLORS["success"])
             self._check_auto_start()
         self._page.update()
 
